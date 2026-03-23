@@ -44,7 +44,7 @@ type Server struct {
 	versions map[ApiVersion]*routegroup.Bundle
 }
 
-func NewServer(cfg *config.Config, endpoints ...ApiEndpointSetupFunc) (*Server, error) {
+func NewServer(cfg *config.Config, scimHandler http.Handler, endpoints ...ApiEndpointSetupFunc) (*Server, error) {
 	s := &Server{
 		cfg:    cfg,
 		server: routegroup.New(http.NewServeMux()),
@@ -115,6 +115,12 @@ func NewServer(cfg *config.Config, endpoints ...ApiEndpointSetupFunc) (*Server, 
 
 			respond.Status(w, http.StatusNotFound)
 		})
+	}
+
+	// Mount SCIM handler if configured
+	if scimHandler != nil {
+		scimPrefix := s.cfg.Web.BasePath + "/scim"
+		s.root.Handle("/scim/", http.StripPrefix(scimPrefix, scimHandler))
 	}
 
 	// Setup routes

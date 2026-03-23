@@ -70,6 +70,12 @@ type Config struct {
 	Web WebConfig `yaml:"web"`
 
 	Webhook WebhookConfig `yaml:"webhook"`
+
+	Scim struct {
+		Enabled      bool   `yaml:"enabled"`
+		BearerToken  string `yaml:"bearer_token"`
+		DeleteAction string `yaml:"delete_action"` // "disable" (default) or "delete"
+	} `yaml:"scim"`
 }
 
 // LogStartupValues logs the startup values of the configuration in debug level
@@ -208,6 +214,10 @@ func defaultConfig() *Config {
 	cfg.Auth.WebAuthn.Enabled = getEnvBool("WG_PORTAL_AUTH_WEBAUTHN_ENABLED", true)
 	cfg.Auth.MinPasswordLength = getEnvInt("WG_PORTAL_AUTH_MIN_PASSWORD_LENGTH", 16)
 	cfg.Auth.HideLoginForm = getEnvBool("WG_PORTAL_AUTH_HIDE_LOGIN_FORM", false)
+
+	cfg.Scim.Enabled = getEnvBool("WG_PORTAL_SCIM_ENABLED", false)
+	cfg.Scim.BearerToken = getEnvStr("WG_PORTAL_SCIM_BEARER_TOKEN", "")
+	cfg.Scim.DeleteAction = getEnvStr("WG_PORTAL_SCIM_DELETE_ACTION", "disable")
 
 	return cfg
 }

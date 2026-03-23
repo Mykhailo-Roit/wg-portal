@@ -44,6 +44,9 @@ type User struct {
 	ProviderName string         // deprecated: moved to Authentications.ProviderName
 	IsAdmin      bool
 
+	// external identity management
+	ExternalId string `gorm:"column:external_id;index" form:"external_id"`
+
 	// authentication sources
 	Authentications []UserAuthentication `gorm:"foreignKey:user_identifier"`
 	// synchronization behavior

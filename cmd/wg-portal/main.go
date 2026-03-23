@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 	"syscall"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/h44z/wg-portal/internal/adapters"
 	"github.com/h44z/wg-portal/internal/app"
 	"github.com/h44z/wg-portal/internal/app/api/core"
+	scimapi "github.com/h44z/wg-portal/internal/app/api/scim"
 	backendV0 "github.com/h44z/wg-portal/internal/app/api/v0/backend"
 	handlersV0 "github.com/h44z/wg-portal/internal/app/api/v0/handlers"
 	backendV1 "github.com/h44z/wg-portal/internal/app/api/v1/backend"
@@ -176,7 +178,17 @@ func main() {
 
 	// endregion API v1 (User REST API)
 
-	webSrv, err := core.NewServer(cfg, apiFrontend, apiV1)
+	// region SCIM
+
+	var scimHandler http.Handler
+	if cfg.Scim.Enabled {
+		scimHandler, err = scimapi.NewScimHandler(cfg, userManager)
+		internal.AssertNoError(err)
+	}
+
+	// endregion SCIM
+
+	webSrv, err := core.NewServer(cfg, scimHandler, apiFrontend, apiV1)
 	internal.AssertNoError(err)
 
 	go metricsServer.Run(ctx)
