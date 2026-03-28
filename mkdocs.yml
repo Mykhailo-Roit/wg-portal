@@ -77,6 +77,7 @@ nav:
           - Binaries: documentation/getting-started/binaries.md
           - Docker: documentation/getting-started/docker.md
           - Helm: documentation/getting-started/helm.md
+          - Local Build And Test: documentation/getting-started/local-build-and-test.md
           - Sources: documentation/getting-started/sources.md
           - Reverse Proxy (HTTPS): documentation/getting-started/reverse-proxy.md
       - Configuration:

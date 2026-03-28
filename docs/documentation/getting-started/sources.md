@@ -1,5 +1,7 @@
 To build the application from source files, use the Makefile provided in the repository.
 
+If you want a Docker-based local developer workflow where the source stays on the host and the build runs in containers, see [Local Build And Test Workflow](./local-build-and-test.md).
+
 ## Requirements
 
 - [Git](https://git-scm.com/downloads)

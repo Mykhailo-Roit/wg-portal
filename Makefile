@@ -41,6 +41,26 @@ format:
 	@echo "Formatting code..."
 	@ $(GOCMD) fmt $(GOFILES)
 
+#> local-build: Build the application inside Docker, tag the image, and export the binary to .artifacts/
+.PHONY: local-build
+local-build:
+	./scripts/docker-build-local.sh
+
+#> local-test-up: Start the local test stack (app + postgres + toolbox)
+.PHONY: local-test-up
+local-test-up:
+	./scripts/local-test-stack.sh up
+
+#> local-test-smoke: Run the smoke test inside the toolbox container
+.PHONY: local-test-smoke
+local-test-smoke:
+	./scripts/local-test-stack.sh smoke
+
+#> local-test-down: Stop the local test stack
+.PHONY: local-test-down
+local-test-down:
+	./scripts/local-test-stack.sh down
+
 ########################################################################################
 ##
 ## TESTING / CODE QUALITY TARGETS

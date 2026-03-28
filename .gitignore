@@ -27,6 +27,7 @@
 *.iws
 out/
 dist/
+.artifacts/
 data/
 ssh.key
 .testCoverage.txt

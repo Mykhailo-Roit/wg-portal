@@ -1,6 +1,10 @@
 # Dockerfile References: https://docs.docker.com/engine/reference/builder/
 # This dockerfile uses a multi-stage build system to reduce the image footprint.
 
+ARG BUILDPLATFORM=linux/amd64
+ARG TARGETARCH=amd64
+ARG BUILD_VERSION=unknown
+
 ######
 # Build frontend
 ######
@@ -51,6 +55,9 @@ COPY --from=builder /build/dist/wg-portal /
 # Final image
 ######
 FROM alpine:3.23
+ARG BUILD_VERSION
+LABEL org.opencontainers.image.title="wg-portal"
+LABEL org.opencontainers.image.version="${BUILD_VERSION}"
 # Install OS-level dependencies
 RUN apk add --no-cache bash curl iptables nftables openresolv wireguard-tools tzdata
 # Setup timezone
