@@ -28,7 +28,7 @@ core:
   
 backend:
   default: local
-  rekey_timeout_interval: 125s
+  rekey_timeout_interval: 180s
   local_resolvconf_prefix: tun.
 
 advanced:
@@ -72,7 +72,7 @@ mail:
   username: ""
   password: ""
   auth_type: plain
-  from: Wireguard Portal <noreply@wireguard.local>
+  from: WireGuard Portal <noreply@wireguard.local>
   link_only: false
   allow_peer_email: false
   templates_path: ""
@@ -98,7 +98,7 @@ web:
   request_logging: false
   expose_host_info: false
   cert_file: ""
-  key_File: ""
+  key_file: ""
   frontend_filepath: ""
 
 webhook:
@@ -482,7 +482,7 @@ To send emails to all peers that have a valid email-address as user-identifier, 
 - **Description:** SMTP authentication type. Valid values: `plain`, `login`, `crammd5`.
 
 ### `from`
-- **Default:** `Wireguard Portal <noreply@wireguard.local>`
+- **Default:** `WireGuard Portal <noreply@wireguard.local>`
 - **Environment Variable:** `WG_PORTAL_MAIL_FROM`
 - **Description:** The default "From" address when sending emails.
 
@@ -522,8 +522,8 @@ Some core authentication options are shared across all providers, while others a
 ### `hide_login_form`
 - **Default:** `false`
 - **Environment Variable:** `WG_PORTAL_AUTH_HIDE_LOGIN_FORM`
-- **Description:** If `true`, the login form is hidden and only the OIDC, OAuth, LDAP, or WebAuthn providers are shown. This is useful if you want to enforce a specific authentication method.
-  If no social login providers are configured, the login form is always shown, regardless of this setting.
+- **Description:** If `true`, the username/password login form is hidden and only external login buttons plus WebAuthn are shown. This is useful if you want to enforce a specific authentication method.
+  If no OIDC or OAuth providers are configured, the login form is always shown, regardless of this setting.
 - **Important:** You can still access the login form by adding the `?all` query parameter to the login URL (e.g. https://wg.portal/#/login?all). 
 
 ---
@@ -535,11 +535,12 @@ Below are the properties for each OIDC provider entry inside `auth.oidc`:
 
 #### `provider_name`
 - **Default:** *(empty)*
-- **Description:** A **unique** name for this provider. Must not conflict with other providers.
+- **Description:** A **unique** internal name for this provider. Must not conflict with other providers and should not contain spaces or special characters.
 
 #### `display_name`
 - **Default:** *(empty)*
 - **Description:** A user-friendly name shown on the login page (e.g., "Login with Google").
+- **Important:** This value is treated as plain text and is not rendered as HTML. If it is blank after sanitization, `provider_name` is used instead.
 
 #### `base_url`
 - **Default:** *(empty)*
@@ -579,7 +580,7 @@ Below are the properties for each OIDC provider entry inside `auth.oidc`:
 
 #### `admin_mapping`
 - **Default:** *(empty)*
-- **Description:** WgPortal can grant a user admin rights by matching the value of the `is_admin` claim against a regular expression. Alternatively, a regular expression can be used to check if a user is member of a specific group listed in the `user_group` claim. The regular expressions are defined in `admin_value_regex` and `admin_group_regex`.
+- **Description:** WireGuard Portal can grant a user admin rights by matching the value of the `is_admin` claim against a regular expression. Alternatively, a regular expression can be used to check if a user is member of a specific group listed in the `user_group` claim. The regular expressions are defined in `admin_value_regex` and `admin_group_regex`.
     - `admin_value_regex`: A regular expression to match the `is_admin` claim. By default, this expression matches the string "true" (`^true$`).
     - `admin_group_regex`: A regular expression to match the `user_groups` claim. Each entry in the `user_groups` claim is checked against this regex.
 
@@ -601,15 +602,17 @@ Below are the properties for each OIDC provider entry inside `auth.oidc`:
 ### OAuth
 
 The `oauth` array contains a list of plain OAuth2 providers.
+OIDC is the preferred option when your identity provider supports it. Plain OAuth2 should be used only as a fallback.
 Below are the properties for each OAuth provider entry inside `auth.oauth`:
 
 #### `provider_name`
 - **Default:** *(empty)*
-- **Description:** A **unique** name for this provider. Must not conflict with other providers.
+- **Description:** A **unique** internal name for this provider. Must not conflict with other providers and should not contain spaces or special characters.
 
 #### `display_name`
 - **Default:** *(empty)*
 - **Description:** A user-friendly name shown on the login page.
+- **Important:** This value is treated as plain text and is not rendered as HTML. If it is blank after sanitization, `provider_name` is used instead.
 
 #### `client_id`
 - **Default:** *(empty)*
@@ -657,7 +660,7 @@ Below are the properties for each OAuth provider entry inside `auth.oauth`:
 
 #### `admin_mapping`
 - **Default:** *(empty)*
-- **Description:** WgPortal can grant a user admin rights by matching the value of the `is_admin` claim against a regular expression. Alternatively, a regular expression can be used to check if a user is member of a specific group listed in the `user_group` claim. The regular expressions are defined in `admin_value_regex` and `admin_group_regex`.
+- **Description:** WireGuard Portal can grant a user admin rights by matching the value of the `is_admin` claim against a regular expression. Alternatively, a regular expression can be used to check if a user is member of a specific group listed in the `user_group` claim. The regular expressions are defined in `admin_value_regex` and `admin_group_regex`.
   - `admin_value_regex`: A regular expression to match the `is_admin` claim. By default, this expression matches the string "true" (`^true$`).
   - `admin_group_regex`: A regular expression to match the `user_groups` claim. Each entry in the `user_groups` claim is checked against this regex.
 
@@ -683,7 +686,7 @@ Below are the properties for each LDAP provider entry inside `auth.ldap`:
 
 #### `provider_name`
 - **Default:** *(empty)*
-- **Description:** A **unique** name for this provider. Must not conflict with other providers.
+- **Description:** A **unique** internal name for this provider. Must not conflict with other providers and should not contain spaces or special characters.
 
 #### `url`
 - **Default:** *(empty)*
@@ -821,9 +824,10 @@ Without a valid `external_url`, the login process may fail due to CSRF protectio
 ### `external_url`
 - **Default:** `http://localhost:8888`
 - **Environment Variable:** `WG_PORTAL_WEB_EXTERNAL_URL`
-- **Description:** The URL where a client can access WireGuard Portal. This URL is used for generating links in emails and for performing OAUTH redirects.
+- **Description:** The URL where a client can access WireGuard Portal. This URL is used for generating links in emails and for performing OAuth redirects.
   The external URL must not contain a path component or trailing slash. If you want to serve WireGuard Portal on a subpath, use the `base_path` setting.
   **Important:** If you are using a reverse proxy, set this to the external URL of the reverse proxy, otherwise login will fail. If you access the portal via IP address, set this to the IP address of the server.
+- **Validation rules:** `external_url` must be absolute, must not contain a query string or fragment, and must not contain a path. Public `http` URLs are rejected; `http` is only accepted for local development hosts such as `localhost`, `host.docker.internal`, `.local` names, and private or loopback IP addresses.
 
 ### `base_path`
 - **Default:** *(empty)*

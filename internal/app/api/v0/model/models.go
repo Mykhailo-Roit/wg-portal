@@ -3,6 +3,7 @@ package model
 type Error struct {
 	Code    int    `json:"Code"`
 	Message string `json:"Message"`
+	ErrorId string `json:"ErrorId,omitempty"`
 }
 
 type Settings struct {

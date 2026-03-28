@@ -14,6 +14,8 @@ web:
   base_path: ""
   request_logging: true
   frontend_filepath: ""
+  # external_url must be absolute and must not include a path.
+  # If you need /wg, keep external_url at the site root and set base_path: /wg.
 
 mail:
   templates_path: ""
@@ -25,8 +27,7 @@ webhook:
 
 auth:
   ldap:
-    - id: ldap1
-      provider_name: company ldap
+    - provider_name: company_ldap
       url: ldap://ldap.yourcompany.local:389
       bind_user: ldap_wireguard@yourcompany.local
       bind_pass: super_Secret_PASSWORD
@@ -37,9 +38,8 @@ auth:
       sync_filter: (&(objectClass=organizationalPerson)(!userAccountControl:1.2.840.113556.1.4.803:=2)(mail=*))
       registration_enabled: true
   oidc:
-    - id: oidc1
-      provider_name: google
-      display_name: Login with</br>Google
+    - provider_name: google
+      display_name: Login with Google
       base_url: https://accounts.google.com
       client_id: the-client-id-1234.apps.googleusercontent.com
       client_secret: A_CLIENT_SECRET
@@ -47,9 +47,8 @@ auth:
         - https://www.googleapis.com/auth/userinfo.email
         - https://www.googleapis.com/auth/userinfo.profile
       registration_enabled: true
-    - id: oidc2
-      provider_name: google2
-      display_name: Login with</br>Google2
+    - provider_name: google2
+      display_name: Login with Google 2
       base_url: https://accounts.google.com
       client_id: another-client-id-1234.apps.googleusercontent.com
       client_secret: A_CLIENT_SECRET
@@ -58,9 +57,9 @@ auth:
         - https://www.googleapis.com/auth/userinfo.profile
       registration_enabled: true
   oauth:
-    - id: google_plain_oauth
-      provider_name: google3
-      display_name: Login with</br>Google3
+    - provider_name: google3
+      display_name: Login with Google 3
+      # Prefer OIDC where available. Plain OAuth should be used as a fallback only.
       client_id: another-client-id-1234.apps.googleusercontent.com
       client_secret: A_CLIENT_SECRET
       auth_url: https://accounts.google.com/o/oauth2/v2/auth
@@ -76,9 +75,8 @@ auth:
         user_identifier: sub
         is_admin: this-attribute-must-be-true
       registration_enabled: true
-    - id: google_plain_oauth_with_groups
-      provider_name: google4
-      display_name: Login with</br>Google4
+    - provider_name: google4
+      display_name: Login with Google 4
       client_id: another-client-id-1234.apps.googleusercontent.com
       client_secret: A_CLIENT_SECRET
       auth_url: https://accounts.google.com/o/oauth2/v2/auth

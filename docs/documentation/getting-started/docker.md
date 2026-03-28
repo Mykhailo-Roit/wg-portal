@@ -137,7 +137,7 @@ There are different types of these tags:
 
 #### The `latest` tag
 
-The lastest tag is the latest stable release of WireGuard Portal. For version **2**, this is the same as the `v2` tag.
+The `latest` tag is the latest stable release of WireGuard Portal. For version **2**, this is the same as the `v2` tag.
 
 #### The `master` tag
 

@@ -1,6 +1,6 @@
 ---
 site_name: WireGuard Portal
-site_description: Manage WireGuard Peers and Interface using a beautiful and simple web UI.
+site_description: Manage WireGuard peers and interfaces using a simple web UI.
 site_url: https://wgportal.org/
 repo_name: h44z/wg-portal
 repo_url: https://github.com/h44z/wg-portal

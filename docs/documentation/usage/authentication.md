@@ -44,12 +44,19 @@ To register a Passkey, open the settings page *(1)* in the web UI and click on t
 WireGuard Portal supports OAuth2 and OIDC authentication. You can use any OAuth2 or OIDC provider that supports the authorization code flow,
 such as Google, GitHub, or Keycloak.
 
+OIDC should be preferred whenever the provider supports it. Plain OAuth2 remains available as a fallback for providers that do not offer a usable OIDC setup.
+
 For OAuth2 or OIDC to work, you need to configure the [`external_url`](../configuration/overview.md#external_url) property in the [`web`](../configuration/overview.md#web) section of the configuration file.
 If you are planning to expose the portal to the internet, make sure that the `external_url` is configured to use HTTPS.
+The `external_url` must be an absolute URL without a path, query string, or fragment. If you want to serve the portal under a subpath, configure [`base_path`](../configuration/overview.md#base_path) separately.
+
+Login provider names are rendered as plain text. The `display_name` field is no longer treated as HTML, so line breaks or markup such as `<br>` will be shown literally instead of being interpreted by the browser.
 
 To add OIDC or OAuth2 authentication to WireGuard Portal, create a Client-ID and Client-Secret in your OAuth2 provider and
 configure a new authentication provider in the [`auth`](../configuration/overview.md#auth) section of the configuration file.
 Make sure that each configured provider has a unique `provider_name` property set. Samples can be seen [here](../configuration/examples.md).
+
+When an authentication flow fails, WireGuard Portal now returns generic user-facing errors while logging the detailed reason on the backend. The API also includes a machine-readable `ErrorId` field that can be used by diagnostics tooling or frontend logic.
 
 #### Limiting Login to Specific Domains
 
@@ -169,4 +176,3 @@ Even if a user bypasses the UI, the backend will enforce these restrictions at t
 
 
 ## User Synchronization
-

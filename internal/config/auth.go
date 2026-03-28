@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/go-ldap/ldap/v3"
 )
@@ -25,6 +27,40 @@ type Auth struct {
 	// HideLoginForm specifies whether the login form should be hidden. If no social login providers are configured,
 	// the login form will be shown regardless of this setting.
 	HideLoginForm bool `yaml:"hide_login_form"`
+}
+
+func sanitizeProviderDisplayName(displayName, providerName string) string {
+	sanitized := strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n' || r == '\r' || r == '\t':
+			return ' '
+		case unicode.IsControl(r):
+			return -1
+		default:
+			return r
+		}
+	}, displayName)
+	sanitized = strings.TrimSpace(sanitized)
+	if sanitized == "" {
+		return providerName
+	}
+	return sanitized
+}
+
+// Sanitize normalizes auth provider settings and returns startup warnings.
+func (a *Auth) Sanitize() []string {
+	warnings := make([]string, 0, len(a.OAuth))
+
+	for i := range a.OpenIDConnect {
+		a.OpenIDConnect[i].Sanitize()
+	}
+	for i := range a.OAuth {
+		a.OAuth[i].Sanitize()
+		warnings = append(warnings,
+			fmt.Sprintf("OAuth provider %q is configured without OIDC; prefer OIDC where possible", a.OAuth[i].ProviderName))
+	}
+
+	return warnings
 }
 
 // BaseFields contains the basic fields that are used to map user information from the authentication providers.
@@ -276,6 +312,11 @@ type OpenIDConnectProvider struct {
 	LogSensitiveInfo bool `yaml:"log_sensitive_info"`
 }
 
+// Sanitize normalizes provider fields that are rendered in the UI.
+func (o *OpenIDConnectProvider) Sanitize() {
+	o.DisplayName = sanitizeProviderDisplayName(o.DisplayName, o.ProviderName)
+}
+
 // OAuthProvider contains the configuration for the OAuth provider.
 type OAuthProvider struct {
 	// ProviderName is an internal name that is used to distinguish oauth endpoints. It must not contain spaces or special characters.
@@ -319,6 +360,11 @@ type OAuthProvider struct {
 	// If LogSensitiveInfo is set to true, sensitive information retrieved from the OAuth provider will be logged in trace level.
 	// This also includes OAuth tokens! Keep this disabled in production!
 	LogSensitiveInfo bool `yaml:"log_sensitive_info"`
+}
+
+// Sanitize normalizes provider fields that are rendered in the UI.
+func (o *OAuthProvider) Sanitize() {
+	o.DisplayName = sanitizeProviderDisplayName(o.DisplayName, o.ProviderName)
 }
 
 // WebauthnConfig contains the configuration for the WebAuthn authenticator.
