@@ -138,7 +138,7 @@ const externalLogin = function (provider) {
                   <!-- OpenIdConnect / OAUTH providers -->
                   <button v-for="(provider, idx) in auth.LoginProviders" :key="provider.Identifier" :class="{'ms-1':idx > 0}"
                           :disabled="loggingIn" :title="provider.Name" class="btn btn-outline-primary flex-fill"
-                          v-html="provider.Name" @click.prevent="externalLogin(provider)"></button>
+                          @click.prevent="externalLogin(provider)">{{ provider.Name }}</button>
                 </div>
               </div>
 
@@ -159,7 +159,7 @@ const externalLogin = function (provider) {
                   <!-- OpenIdConnect / OAUTH providers -->
                   <button v-for="(provider, idx) in auth.LoginProviders" :key="provider.Identifier" :class="{'ms-1':idx > 0}"
                           :disabled="loggingIn" :title="provider.Name" class="btn btn-outline-primary flex-fill"
-                          v-html="provider.Name" @click.prevent="externalLogin(provider)"></button>
+                          @click.prevent="externalLogin(provider)">{{ provider.Name }}</button>
                 </div>
               </div>
 

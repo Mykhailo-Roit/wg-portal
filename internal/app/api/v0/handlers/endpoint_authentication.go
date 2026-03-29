@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -77,6 +78,18 @@ type AuthEndpoint struct {
 	validate      Validator
 	webAuthn      WebAuthnService
 }
+
+type authErrorCode string
+
+const (
+	authErrorCodeAlreadyLoggedIn     authErrorCode = "auth_already_logged_in"
+	authErrorCodeInvalidReturnURL    authErrorCode = "auth_invalid_return_url"
+	authErrorCodeProviderUnavailable authErrorCode = "auth_provider_unavailable"
+	authErrorCodeProviderMismatch    authErrorCode = "auth_provider_mismatch"
+	authErrorCodeStateMismatch       authErrorCode = "auth_state_mismatch"
+	authErrorCodeLoginFailed         authErrorCode = "auth_login_failed"
+	authErrorCodeInvalidRequest      authErrorCode = "auth_invalid_request"
+)
 
 func NewAuthEndpoint(
 	cfg *config.Config,
@@ -206,8 +219,7 @@ func (e AuthEndpoint) handleOauthInitiateGet() http.HandlerFunc {
 
 		if returnTo != "" {
 			if !e.isValidReturnUrl(returnTo) {
-				respond.JSON(w, http.StatusBadRequest,
-					model.Error{Code: http.StatusBadRequest, Message: "invalid return URL"})
+				e.respondAuthError(w, http.StatusBadRequest, authErrorCodeInvalidReturnURL, "invalid return URL")
 				return
 			}
 			if u, err := url.Parse(returnTo); err == nil {
@@ -226,21 +238,19 @@ func (e AuthEndpoint) handleOauthInitiateGet() http.HandlerFunc {
 				returnParams = queryParams.Encode()
 				redirectToReturn()
 			} else {
-				respond.JSON(w, http.StatusBadRequest,
-					model.Error{Code: http.StatusBadRequest, Message: "already logged in"})
+				e.respondAuthError(w, http.StatusBadRequest, authErrorCodeAlreadyLoggedIn, "already logged in")
 			}
 			return
 		}
 
 		authCodeUrl, state, nonce, err := e.authService.OauthLoginStep1(context.Background(), provider)
 		if err != nil {
-			slog.Debug("failed to create oauth auth code URL",
-				"provider", provider, "error", err)
+			e.logAuthError("failed to create oauth auth code URL", authErrorCodeProviderUnavailable, provider, err)
 			if autoRedirect && e.isValidReturnUrl(returnTo) {
 				redirectToReturn()
 			} else {
-				respond.JSON(w, http.StatusInternalServerError,
-					model.Error{Code: http.StatusInternalServerError, Message: err.Error()})
+				e.respondAuthError(w, http.StatusInternalServerError, authErrorCodeProviderUnavailable,
+					"authentication provider is unavailable")
 			}
 			return
 		}
@@ -298,7 +308,7 @@ func (e AuthEndpoint) handleOauthCallbackGet() http.HandlerFunc {
 				returnParams = queryParams.Encode()
 				redirectToReturn()
 			} else {
-				respond.JSON(w, http.StatusBadRequest, model.Error{Message: "already logged in"})
+				e.respondAuthError(w, http.StatusBadRequest, authErrorCodeAlreadyLoggedIn, "already logged in")
 			}
 			return
 		}
@@ -308,24 +318,24 @@ func (e AuthEndpoint) handleOauthCallbackGet() http.HandlerFunc {
 		oauthState := request.Query(r, "state")
 
 		if provider != currentSession.OauthProvider {
-			slog.Debug("invalid oauth provider in callback",
-				"expected", currentSession.OauthProvider, "got", provider, "state", oauthState)
+			e.logAuthError("invalid oauth provider in callback", authErrorCodeProviderMismatch, provider,
+				errors.New("provider does not match session"))
 			if returnUrl != nil && e.isValidReturnUrl(returnUrl.String()) {
 				redirectToReturn()
 			} else {
-				respond.JSON(w, http.StatusBadRequest,
-					model.Error{Code: http.StatusBadRequest, Message: "invalid oauth provider"})
+				e.respondAuthError(w, http.StatusBadRequest, authErrorCodeProviderMismatch,
+					"authentication request is no longer valid")
 			}
 			return
 		}
 		if oauthState != currentSession.OauthState {
-			slog.Debug("invalid oauth state in callback",
-				"expected", currentSession.OauthState, "got", oauthState, "provider", provider)
+			e.logAuthError("invalid oauth state in callback", authErrorCodeStateMismatch, provider,
+				errors.New("state does not match session"))
 			if returnUrl != nil && e.isValidReturnUrl(returnUrl.String()) {
 				redirectToReturn()
 			} else {
-				respond.JSON(w, http.StatusBadRequest,
-					model.Error{Code: http.StatusBadRequest, Message: "invalid oauth state"})
+				e.respondAuthError(w, http.StatusBadRequest, authErrorCodeStateMismatch,
+					"authentication request is no longer valid")
 			}
 			return
 		}
@@ -335,13 +345,11 @@ func (e AuthEndpoint) handleOauthCallbackGet() http.HandlerFunc {
 			oauthCode)
 		cancel()
 		if err != nil {
-			slog.Debug("failed to process oauth code",
-				"provider", provider, "state", oauthState, "error", err)
+			e.logAuthError("failed to process oauth code", authErrorCodeLoginFailed, provider, err)
 			if returnUrl != nil && e.isValidReturnUrl(returnUrl.String()) {
 				redirectToReturn()
 			} else {
-				respond.JSON(w, http.StatusUnauthorized,
-					model.Error{Code: http.StatusUnauthorized, Message: err.Error()})
+				e.respondAuthError(w, http.StatusUnauthorized, authErrorCodeLoginFailed, "authentication failed")
 			}
 			return
 		}
@@ -392,7 +400,7 @@ func (e AuthEndpoint) handleLoginPost() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		currentSession := e.session.GetData(r.Context())
 		if currentSession.LoggedIn {
-			respond.JSON(w, http.StatusOK, model.Error{Code: http.StatusOK, Message: "already logged in"})
+			e.respondAuthError(w, http.StatusOK, authErrorCodeAlreadyLoggedIn, "already logged in")
 			return
 		}
 
@@ -402,19 +410,19 @@ func (e AuthEndpoint) handleLoginPost() http.HandlerFunc {
 		}
 
 		if err := request.BodyJson(r, &loginData); err != nil {
-			respond.JSON(w, http.StatusBadRequest, model.Error{Code: http.StatusBadRequest, Message: err.Error()})
+			e.respondAuthError(w, http.StatusBadRequest, authErrorCodeInvalidRequest, err.Error())
 			return
 		}
 		if err := e.validate.Struct(loginData); err != nil {
-			respond.JSON(w, http.StatusBadRequest, model.Error{Code: http.StatusBadRequest, Message: err.Error()})
+			e.respondAuthError(w, http.StatusBadRequest, authErrorCodeInvalidRequest, err.Error())
 			return
 		}
 
 		user, err := e.authService.PlainLogin(context.Background(), loginData.Username,
 			loginData.Password)
 		if err != nil {
-			respond.JSON(w, http.StatusUnauthorized,
-				model.Error{Code: http.StatusUnauthorized, Message: "login failed"})
+			e.logAuthError("plain login failed", authErrorCodeLoginFailed, "", err)
+			e.respondAuthError(w, http.StatusUnauthorized, authErrorCodeLoginFailed, "login failed")
 			return
 		}
 
@@ -422,6 +430,22 @@ func (e AuthEndpoint) handleLoginPost() http.HandlerFunc {
 
 		respond.JSON(w, http.StatusOK, user)
 	}
+}
+
+func (e AuthEndpoint) respondAuthError(w http.ResponseWriter, statusCode int, code authErrorCode, message string) {
+	respond.JSON(w, statusCode, model.Error{
+		Code:    statusCode,
+		Message: message,
+		ErrorId: string(code),
+	})
+}
+
+func (e AuthEndpoint) logAuthError(message string, code authErrorCode, provider string, err error) {
+	if provider == "" {
+		slog.Debug(message, "errorId", code, "error", err)
+		return
+	}
+	slog.Debug(message, "errorId", code, "provider", provider, "error", err)
 }
 
 // handleLogoutPost returns a gorm Handler function.

@@ -15,7 +15,7 @@ WireGuard Portal provides a web UI and a REST API for user interaction. It is im
 ### HTTPS
 It is recommended to use HTTPS for all communication with the portal to prevent eavesdropping. 
 
-Event though, WireGuard Portal supports HTTPS out of the box, it is recommended to use a reverse proxy like Nginx or Traefik to handle SSL termination and other security features.
+Even though WireGuard Portal supports HTTPS out of the box, it is recommended to use a reverse proxy like Nginx or Traefik to handle TLS termination and other security features.
 A detailed explanation is available in the [Reverse Proxy](../getting-started/reverse-proxy.md) section.
 
 ### Secure Authentication

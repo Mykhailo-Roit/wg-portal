@@ -46,6 +46,55 @@ The configuration portal supports using a database (SQLite, MySQL, MsSQL, or Pos
 
 For the complete documentation visit [wgportal.org](https://wgportal.org).
 
+## Local Container Workflow
+
+The repository now contains a local developer workflow where:
+
+* source code stays on the host machine
+* the application is built inside Docker
+* the compiled binary is copied back into `.artifacts/` in the repository
+* the same build tag is used for the local binary and the Docker image
+* testing runs against a dedicated stack with `app`, `db`, and `toolbox` containers
+
+### Build locally in Docker
+
+```sh
+make local-build
+```
+
+This builds the application image and exports the compiled binary to `.artifacts/bin/`.
+Build metadata is written to `.artifacts/env/local.env`.
+
+### Start the local test stack
+
+```sh
+make local-test-up
+```
+
+This starts:
+
+* `app` using the locally built image tag
+* `db` using PostgreSQL
+* `toolbox` with CLI tooling for manual checks and automated tests
+
+### Run smoke tests
+
+```sh
+make local-test-smoke
+```
+
+### Open a shell in the toolbox container
+
+```sh
+./scripts/local-test-stack.sh shell
+```
+
+### Stop the stack
+
+```sh
+make local-test-down
+```
+
 ## What is out of scope
 
 * Automatic generation or application of any `iptables` or `nftables` rules.

@@ -236,7 +236,19 @@ func GetConfig() (*Config, error) {
 	}
 
 	cfg.Web.Sanitize()
-	err := cfg.Backend.Validate()
+	warnings, err := cfg.Web.Validate()
+	if err != nil {
+		return nil, err
+	}
+	for _, warning := range warnings {
+		slog.Warn("web config warning", "warning", warning)
+	}
+
+	for _, warning := range cfg.Auth.Sanitize() {
+		slog.Warn("auth config warning", "warning", warning)
+	}
+
+	err = cfg.Backend.Validate()
 	if err != nil {
 		return nil, err
 	}

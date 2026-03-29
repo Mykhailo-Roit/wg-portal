@@ -1,6 +1,11 @@
 package config
 
-import "strings"
+import (
+	"fmt"
+	"net/netip"
+	"net/url"
+	"strings"
+)
 
 // WebConfig contains the configuration for the web server.
 type WebConfig struct {
@@ -47,4 +52,56 @@ func (c *WebConfig) Sanitize() {
 		p = "/" + p
 	}
 	c.BasePath = p
+}
+
+// Validate validates externally visible web settings and returns non-fatal warnings.
+func (c WebConfig) Validate() ([]string, error) {
+	parsed, err := url.Parse(c.ExternalUrl)
+	if err != nil {
+		return nil, fmt.Errorf("invalid web.external_url: %w", err)
+	}
+
+	if !parsed.IsAbs() {
+		return nil, fmt.Errorf("invalid web.external_url: URL must be absolute")
+	}
+	if parsed.Host == "" {
+		return nil, fmt.Errorf("invalid web.external_url: host is required")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, fmt.Errorf("invalid web.external_url: query and fragment are not allowed")
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return nil, fmt.Errorf("invalid web.external_url: path is not allowed; use web.base_path instead")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("invalid web.external_url: unsupported scheme %q", parsed.Scheme)
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return nil, fmt.Errorf("invalid web.external_url: host is required")
+	}
+
+	if parsed.Scheme == "http" && !isLocalDevelopmentHost(host) {
+		return nil, fmt.Errorf("invalid web.external_url: public http is not allowed, use https")
+	}
+
+	return nil, nil
+}
+
+func isLocalDevelopmentHost(host string) bool {
+	switch {
+	case strings.EqualFold(host, "localhost"):
+		return true
+	case strings.EqualFold(host, "host.docker.internal"):
+		return true
+	case strings.HasSuffix(strings.ToLower(host), ".local"):
+		return true
+	}
+
+	if ip, err := netip.ParseAddr(host); err == nil {
+		return ip.IsLoopback() || ip.IsPrivate()
+	}
+
+	return false
 }

@@ -102,7 +102,7 @@ auth:
     # A sample Entra ID provider with environment variable substitution.
     # Only users with an @outlook.com email address are allowed to register or login.
     - provider_name: azure
-      display_name: Login with</br>Entra ID
+      display_name: Login with Entra ID
       registration_enabled: true
       base_url: "https://login.microsoftonline.com/${AZURE_TENANT_ID}/v2.0"
       client_id: "${AZURE_CLIENT_ID}"
@@ -115,7 +115,7 @@ auth:
 
     # a sample provider where users with the attribute `wg_admin` set to `true` are considered as admins
     - provider_name: google
-      display_name: Login with</br>Google
+      display_name: Login with Google
       base_url: https://accounts.google.com
       client_id: the-client-id-1234.apps.googleusercontent.com
       client_secret: A_CLIENT_SECRET
@@ -137,7 +137,7 @@ auth:
 
     # a sample provider where users in the group `the-admin-group` are considered as admins
     - provider_name: google2
-      display_name: Login with</br>Google2
+      display_name: Login with Google 2
       base_url: https://accounts.google.com
       client_id: another-client-id-1234.apps.googleusercontent.com
       client_secret: A_CLIENT_SECRET
@@ -165,10 +165,12 @@ auth:
 
 auth:
   oauth:
+    # Prefer OIDC when your provider supports it.
+    # Plain OAuth2 should be used as a fallback only.
     # a sample provider where users with the attribute `this-attribute-must-be-true` set to `true` or `True`
     # are considered as admins
     - provider_name: google3
-      display_name: Login with</br>Google3
+      display_name: Login with Google 3
       client_id: another-client-id-1234.apps.googleusercontent.com
       client_secret: A_CLIENT_SECRET
       auth_url: https://accounts.google.com/o/oauth2/v2/auth
@@ -190,7 +192,7 @@ auth:
     # a sample provider where either users with the attribute `this-attribute-must-be-true` set to `true` or 
     # users in the group `admin-group-name` are considered as admins
     - provider_name: google4
-      display_name: Login with</br>Google4
+      display_name: Login with Google 4
       client_id: another-client-id-1234.apps.googleusercontent.com
       client_secret: A_CLIENT_SECRET
       auth_url: https://accounts.google.com/o/oauth2/v2/auth

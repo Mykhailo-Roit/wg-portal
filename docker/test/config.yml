@@ -1,0 +1,26 @@
+advanced:
+  log_level: debug
+
+core:
+  admin_user: admin@wgportal.local
+  admin_password: wgportal-test-password
+  create_default_peer: false
+  create_default_peer_on_creation: false
+  import_existing: false
+  restore_state: false
+
+database:
+  type: postgres
+  dsn: host=db user=wgportal password=wgportal dbname=wgportal port=5432 sslmode=disable TimeZone=UTC
+
+statistics:
+  listening_address: :8787
+
+auth:
+  webauthn:
+    enabled: false
+
+web:
+  external_url: http://localhost:8888
+  listening_address: :8888
+  request_logging: true
