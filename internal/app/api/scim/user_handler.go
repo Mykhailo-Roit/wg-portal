@@ -314,6 +314,11 @@ func applyPatchPath(user *domain.User, path string, value interface{}) {
 		if v, ok := value.(string); ok {
 			user.Identifier = domain.UserIdentifier(v)
 		}
+	case "displayName":
+		// Entra sends displayName in PATCH; we split into first/last as a fallback
+		// if givenName/familyName are not provided separately.
+	case "name.formatted":
+		// Read-only in our schema, ignore.
 	case "name.givenName":
 		if v, ok := value.(string); ok {
 			user.Firstname = v

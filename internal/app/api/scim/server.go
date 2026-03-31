@@ -17,6 +17,9 @@ import (
 
 // NewScimHandler creates a new SCIM v2.0 HTTP handler with bearer token authentication.
 func NewScimHandler(cfg *config.Config, userManager UserManager) (http.Handler, error) {
+	// Azure Entra ID sends booleans as strings (e.g., "False" instead of false).
+	schema.SetAllowStringValues(true)
+
 	userSchema := schema.Schema{
 		ID:          schema.UserSchema,
 		Name:        optional.NewString("User"),
