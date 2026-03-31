@@ -195,8 +195,9 @@ func TestCreateUser_MissingUserName(t *testing.T) {
 func TestCreateUser_Duplicate(t *testing.T) {
 	h, _ := newTestHandler(t, "disable")
 	doRequest(h, http.MethodPost, "/v2/Users", validUserJSON)
+	// Second create for same user updates profile instead of returning conflict
 	rr := doRequest(h, http.MethodPost, "/v2/Users", validUserJSON)
-	assert.Equal(t, http.StatusConflict, rr.Code)
+	assert.Equal(t, http.StatusCreated, rr.Code)
 }
 
 func TestGetUser_Exists(t *testing.T) {
@@ -347,4 +348,196 @@ func TestExtractPrimaryEmail(t *testing.T) {
 		map[string]interface{}{"value": "second@example.com"},
 	}
 	assert.Equal(t, "first@example.com", extractPrimaryEmail(emails2))
+}
+
+// --- New Tests for SCIM Enhancements ---
+
+func TestBearerToken_EmptyConfigured(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Scim.Enabled = true
+	cfg.Scim.BearerToken = "" // empty token
+	mock := newMockUserManager()
+	h, err := NewScimHandler(cfg, mock)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/Users", nil)
+	req.Header.Set("Authorization", "Bearer anything")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
+}
+
+func TestCreateUser_ExistingUserUpdatesProfile(t *testing.T) {
+	h, mock := newTestHandler(t, "disable")
+	// Pre-create user (simulating OIDC login)
+	mock.users[domain.UserIdentifier("jdoe")] = &domain.User{
+		Identifier: "jdoe",
+		Firstname:  "Old",
+		Lastname:   "Name",
+		Email:      "old@example.com",
+	}
+
+	rr := doRequest(h, http.MethodPost, "/v2/Users", validUserJSON)
+	assert.Equal(t, http.StatusCreated, rr.Code)
+
+	u := mock.users[domain.UserIdentifier("jdoe")]
+	assert.Equal(t, "John", u.Firstname)
+	assert.Equal(t, "Doe", u.Lastname)
+	assert.Equal(t, "jdoe@example.com", u.Email)
+}
+
+func TestCreateUser_ExistingUserSyncsDepartment(t *testing.T) {
+	h, mock := newTestHandler(t, "disable")
+	mock.users[domain.UserIdentifier("jdoe")] = &domain.User{
+		Identifier: "jdoe",
+	}
+
+	rr := doRequest(h, http.MethodPost, "/v2/Users", `{
+		"schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+		"userName": "jdoe",
+		"active": true,
+		"urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {"department": "Engineering"}
+	}`)
+	assert.Equal(t, http.StatusCreated, rr.Code)
+	assert.Equal(t, "Engineering", mock.users[domain.UserIdentifier("jdoe")].Department)
+}
+
+func TestCreateUser_ExistingUserSyncsDisabledReason(t *testing.T) {
+	h, mock := newTestHandler(t, "disable")
+	mock.users[domain.UserIdentifier("jdoe")] = &domain.User{
+		Identifier: "jdoe",
+	}
+
+	rr := doRequest(h, http.MethodPost, "/v2/Users", `{
+		"schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+		"userName": "jdoe",
+		"active": false
+	}`)
+	assert.Equal(t, http.StatusCreated, rr.Code)
+	u := mock.users[domain.UserIdentifier("jdoe")]
+	assert.NotNil(t, u.Disabled)
+	assert.Equal(t, "SCIM provisioned disabled", u.DisabledReason)
+}
+
+func TestCreateUser_ProviderName(t *testing.T) {
+	mock := newMockUserManager()
+	cfg := testCfg("disable")
+	cfg.Scim.ProviderName = "MyOIDC"
+	h, err := NewScimHandler(cfg, mock)
+	require.NoError(t, err)
+
+	doRequest(h, http.MethodPost, "/v2/Users", validUserJSON)
+	u := mock.users[domain.UserIdentifier("jdoe")]
+	require.Len(t, u.Authentications, 1)
+	assert.Equal(t, "MyOIDC", u.Authentications[0].ProviderName)
+	assert.Equal(t, domain.UserSourceOauth, u.Authentications[0].Source)
+}
+
+func TestCreateUser_DefaultProviderName(t *testing.T) {
+	h, mock := newTestHandler(t, "disable")
+	doRequest(h, http.MethodPost, "/v2/Users", validUserJSON)
+	u := mock.users[domain.UserIdentifier("jdoe")]
+	require.Len(t, u.Authentications, 1)
+	assert.Equal(t, "scim", u.Authentications[0].ProviderName)
+}
+
+func TestPatchUser_DisabledReason(t *testing.T) {
+	h, mock := newTestHandler(t, "disable")
+	doRequest(h, http.MethodPost, "/v2/Users", validUserJSON)
+
+	doRequest(h, http.MethodPatch, "/v2/Users/jdoe", `{
+		"schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+		"Operations": [{"op": "replace", "value": {"active": false}}]
+	}`)
+	u := mock.users[domain.UserIdentifier("jdoe")]
+	assert.NotNil(t, u.Disabled)
+	assert.Equal(t, "SCIM provisioned disabled", u.DisabledReason)
+
+	// Re-enable clears reason
+	doRequest(h, http.MethodPatch, "/v2/Users/jdoe", `{
+		"schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+		"Operations": [{"op": "replace", "value": {"active": true}}]
+	}`)
+	u = mock.users[domain.UserIdentifier("jdoe")]
+	assert.Nil(t, u.Disabled)
+	assert.Equal(t, "", u.DisabledReason)
+}
+
+func TestPatchUser_FilteredPhonePath(t *testing.T) {
+	h, mock := newTestHandler(t, "disable")
+	doRequest(h, http.MethodPost, "/v2/Users", validUserJSON)
+
+	rr := doRequest(h, http.MethodPatch, "/v2/Users/jdoe", `{
+		"schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+		"Operations": [{"op": "Add", "path": "phoneNumbers[type eq \"mobile\"].value", "value": "+1555123"}]
+	}`)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "+1555123", mock.users[domain.UserIdentifier("jdoe")].Phone)
+}
+
+func TestPatchUser_FilteredEmailPath(t *testing.T) {
+	h, mock := newTestHandler(t, "disable")
+	doRequest(h, http.MethodPost, "/v2/Users", validUserJSON)
+
+	rr := doRequest(h, http.MethodPatch, "/v2/Users/jdoe", `{
+		"schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+		"Operations": [{"op": "Add", "path": "emails[type eq \"work\"].value", "value": "work@example.com"}]
+	}`)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "work@example.com", mock.users[domain.UserIdentifier("jdoe")].Email)
+}
+
+func TestPatchUser_EnterpriseDepartment(t *testing.T) {
+	h, mock := newTestHandler(t, "disable")
+	doRequest(h, http.MethodPost, "/v2/Users", validUserJSON)
+
+	rr := doRequest(h, http.MethodPatch, "/v2/Users/jdoe", `{
+		"schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+		"Operations": [{"op": "replace", "path": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:department", "value": "Sales"}]
+	}`)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "Sales", mock.users[domain.UserIdentifier("jdoe")].Department)
+}
+
+func TestGetAllUsers_EmptyResourcesNotNull(t *testing.T) {
+	h, _ := newTestHandler(t, "disable")
+	rr := doRequest(h, http.MethodGet, "/v2/Users", "")
+	assert.Equal(t, http.StatusOK, rr.Code)
+	// Verify Resources is [] not null
+	assert.Contains(t, rr.Body.String(), `"Resources":[]`)
+}
+
+func TestDomainUserToResource_Department(t *testing.T) {
+	user := &domain.User{
+		Identifier: "test",
+		Department: "Engineering",
+	}
+	res := domainUserToResource(user)
+	enterprise, ok := res.Attributes[enterpriseSchemaID].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "Engineering", enterprise["department"])
+}
+
+func TestDomainUserToResource_NoDepartment(t *testing.T) {
+	user := &domain.User{
+		Identifier: "test",
+	}
+	res := domainUserToResource(user)
+	_, ok := res.Attributes[enterpriseSchemaID]
+	assert.False(t, ok, "enterprise extension should not be present when department is empty")
+}
+
+func TestAttributesToDomainUser_Department(t *testing.T) {
+	attrs := map[string]interface{}{
+		"userName":          "test",
+		enterpriseSchemaID: map[string]interface{}{"department": "Sales"},
+	}
+	user := attributesToDomainUser(attrs)
+	assert.Equal(t, "Sales", user.Department)
+}
+
+func TestClearField_Department(t *testing.T) {
+	user := &domain.User{Department: "Engineering"}
+	clearField(user, enterpriseSchemaID+":department")
+	assert.Equal(t, "", user.Department)
 }
