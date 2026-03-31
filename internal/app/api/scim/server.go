@@ -3,6 +3,7 @@ package scim
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -94,7 +95,26 @@ func NewScimHandler(cfg *config.Config, userManager UserManager) (http.Handler, 
 		return nil, err
 	}
 
-	return bearerTokenMiddleware(cfg.Scim.BearerToken, scimServer), nil
+	return scimLoggingMiddleware(bearerTokenMiddleware(cfg.Scim.BearerToken, scimServer)), nil
+}
+
+func scimLoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slog.Debug("[SCIM] Incoming request", "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr)
+		rw := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(rw, r)
+		slog.Debug("[SCIM] Response", "method", r.Method, "path", r.URL.Path, "status", rw.statusCode)
+	})
+}
+
+type responseRecorder struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseRecorder) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
 }
 
 func bearerTokenMiddleware(token string, next http.Handler) http.Handler {
@@ -102,12 +122,14 @@ func bearerTokenMiddleware(token string, next http.Handler) http.Handler {
 		authHeader := r.Header.Get("Authorization")
 		const prefix = "Bearer "
 		if !strings.HasPrefix(authHeader, prefix) {
+			slog.Debug("[SCIM] Auth failed: missing Bearer prefix", "method", r.Method, "path", r.URL.Path)
 			writeScimUnauthorized(w)
 			return
 		}
 
 		provided := authHeader[len(prefix):]
 		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			slog.Debug("[SCIM] Auth failed: invalid token", "method", r.Method, "path", r.URL.Path)
 			writeScimUnauthorized(w)
 			return
 		}

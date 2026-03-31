@@ -74,7 +74,8 @@ type Config struct {
 	Scim struct {
 		Enabled      bool   `yaml:"enabled"`
 		BearerToken  string `yaml:"bearer_token"`
-		DeleteAction string `yaml:"delete_action"` // "disable" (default) or "delete"
+		DeleteAction string `yaml:"delete_action"`  // "disable" (default) or "delete"
+		ProviderName string `yaml:"provider_name"`   // links SCIM to an existing OIDC provider (e.g., "ENntraID")
 	} `yaml:"scim"`
 }
 
@@ -218,6 +219,7 @@ func defaultConfig() *Config {
 	cfg.Scim.Enabled = getEnvBool("WG_PORTAL_SCIM_ENABLED", false)
 	cfg.Scim.BearerToken = getEnvStr("WG_PORTAL_SCIM_BEARER_TOKEN", "")
 	cfg.Scim.DeleteAction = getEnvStr("WG_PORTAL_SCIM_DELETE_ACTION", "disable")
+	cfg.Scim.ProviderName = getEnvStr("WG_PORTAL_SCIM_PROVIDER_NAME", "")
 
 	return cfg
 }

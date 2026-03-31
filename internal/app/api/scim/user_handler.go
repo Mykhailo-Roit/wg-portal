@@ -33,7 +33,31 @@ func (h *userHandler) Create(r *http.Request, attrs scim.ResourceAttributes) (sc
 	slog.Debug("[SCIM] Create user request", "userName", attrs["userName"], "externalId", attrs["externalId"])
 	user := attributesToDomainUser(attrs)
 
-	// SCIM-provisioned users authenticate via OIDC, not local database passwords.
+	// Check if user already exists (e.g., created via OIDC login).
+	// If so, update their profile instead of creating a duplicate.
+	existing, err := h.users.GetUser(r.Context(), user.Identifier)
+	if err == nil {
+		slog.Debug("[SCIM] User already exists, updating profile", "id", user.Identifier)
+		existing.Firstname = user.Firstname
+		existing.Lastname = user.Lastname
+		existing.Email = user.Email
+		existing.Phone = user.Phone
+		existing.ExternalId = user.ExternalId
+		existing.Disabled = user.Disabled
+		updated, err := h.users.UpdateUser(r.Context(), existing)
+		if err != nil {
+			slog.Debug("[SCIM] Update existing user failed", "id", user.Identifier, "error", err)
+			return scim.Resource{}, scimerrors.ScimErrorInternal
+		}
+		slog.Debug("[SCIM] Update existing user success", "id", updated.Identifier)
+		return domainUserToResource(updated), nil
+	}
+
+	// New user — set auth source linked to the configured OIDC provider.
+	providerName := h.cfg.Scim.ProviderName
+	if providerName == "" {
+		providerName = "scim"
+	}
 	now := time.Now()
 	ctxUserInfo := domain.GetUserInfo(r.Context())
 	user.Authentications = []domain.UserAuthentication{
@@ -46,7 +70,7 @@ func (h *userHandler) Create(r *http.Request, attrs scim.ResourceAttributes) (sc
 			},
 			UserIdentifier: user.Identifier,
 			Source:         domain.UserSourceOauth,
-			ProviderName:   "scim",
+			ProviderName:   providerName,
 		},
 	}
 
