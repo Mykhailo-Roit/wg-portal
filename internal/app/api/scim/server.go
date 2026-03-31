@@ -84,7 +84,10 @@ func NewScimHandler(cfg *config.Config, userManager UserManager) (http.Handler, 
 		Name:     "User",
 		Endpoint: "/Users",
 		Schema:   userSchema,
-		Handler:  &userHandler{users: userManager, cfg: cfg},
+		SchemaExtensions: []scim.SchemaExtension{
+			{Schema: schema.ExtensionEnterpriseUser()},
+		},
+		Handler: &userHandler{users: userManager, cfg: cfg},
 	}
 
 	scimServer, err := scim.NewServer(&scim.ServerArgs{
@@ -119,6 +122,12 @@ func (rw *responseRecorder) WriteHeader(code int) {
 
 func bearerTokenMiddleware(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if token == "" {
+			slog.Debug("[SCIM] Auth failed: bearer token not configured", "method", r.Method, "path", r.URL.Path)
+			writeScimUnauthorized(w)
+			return
+		}
+
 		authHeader := r.Header.Get("Authorization")
 		const prefix = "Bearer "
 		if !strings.HasPrefix(authHeader, prefix) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/elimity-com/scim"
@@ -14,6 +15,8 @@ import (
 	"github.com/h44z/wg-portal/internal/config"
 	"github.com/h44z/wg-portal/internal/domain"
 )
+
+const enterpriseSchemaID = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
 
 // UserManager defines the subset of users.Manager methods needed by the SCIM handler.
 type UserManager interface {
@@ -251,6 +254,11 @@ func domainUserToResource(user *domain.User) scim.Resource {
 			map[string]interface{}{"value": user.Phone},
 		}
 	}
+	if user.Department != "" {
+		attrs[enterpriseSchemaID] = map[string]interface{}{
+			"department": user.Department,
+		}
+	}
 
 	res := scim.Resource{
 		ID:         string(user.Identifier),
@@ -299,6 +307,12 @@ func attributesToDomainUser(attrs scim.ResourceAttributes) *domain.User {
 	if active, ok := attrs["active"].(bool); ok && !active {
 		now := time.Now()
 		user.Disabled = &now
+		user.DisabledReason = "SCIM provisioned disabled"
+	}
+	if enterprise, ok := attrs[enterpriseSchemaID].(map[string]interface{}); ok {
+		if v, ok := enterprise["department"].(string); ok {
+			user.Department = v
+		}
 	}
 
 	return user
@@ -332,6 +346,7 @@ func applyPatchPath(user *domain.User, path string, value interface{}) {
 			} else {
 				now := time.Now()
 				user.Disabled = &now
+				user.DisabledReason = "SCIM provisioned disabled"
 			}
 		}
 	case "userName":
@@ -367,6 +382,21 @@ func applyPatchPath(user *domain.User, path string, value interface{}) {
 				}
 			}
 		}
+	case enterpriseSchemaID + ":department":
+		if v, ok := value.(string); ok {
+			user.Department = v
+		}
+	default:
+		switch {
+		case strings.HasPrefix(path, "phoneNumbers["):
+			if v, ok := value.(string); ok {
+				user.Phone = v
+			}
+		case strings.HasPrefix(path, "emails["):
+			if v, ok := value.(string); ok {
+				user.Email = v
+			}
+		}
 	}
 }
 
@@ -382,5 +412,7 @@ func clearField(user *domain.User, path string) {
 		user.Phone = ""
 	case "externalId":
 		user.ExternalId = ""
+	case enterpriseSchemaID + ":department":
+		user.Department = ""
 	}
 }
