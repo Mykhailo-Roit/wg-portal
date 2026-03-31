@@ -47,6 +47,8 @@ func (h *userHandler) Create(r *http.Request, attrs scim.ResourceAttributes) (sc
 		existing.Phone = user.Phone
 		existing.ExternalId = user.ExternalId
 		existing.Disabled = user.Disabled
+		existing.DisabledReason = user.DisabledReason
+		existing.Department = user.Department
 		updated, err := h.users.UpdateUser(r.Context(), existing)
 		if err != nil {
 			slog.Debug("[SCIM] Update existing user failed", "id", user.Identifier, "error", err)
