@@ -3,6 +3,7 @@ package scim
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -29,20 +30,43 @@ type userHandler struct {
 }
 
 func (h *userHandler) Create(r *http.Request, attrs scim.ResourceAttributes) (scim.Resource, error) {
+	slog.Debug("[SCIM] Create user request", "userName", attrs["userName"], "externalId", attrs["externalId"])
 	user := attributesToDomainUser(attrs)
+
+	// SCIM-provisioned users authenticate via OIDC, not local database passwords.
+	now := time.Now()
+	ctxUserInfo := domain.GetUserInfo(r.Context())
+	user.Authentications = []domain.UserAuthentication{
+		{
+			BaseModel: domain.BaseModel{
+				CreatedBy: ctxUserInfo.UserId(),
+				UpdatedBy: ctxUserInfo.UserId(),
+				CreatedAt: now,
+				UpdatedAt: now,
+			},
+			UserIdentifier: user.Identifier,
+			Source:         domain.UserSourceOauth,
+			ProviderName:   "scim",
+		},
+	}
+
 	created, err := h.users.CreateUser(r.Context(), user)
 	if err != nil {
+		slog.Debug("[SCIM] Create user failed", "userName", user.Identifier, "error", err)
 		if errors.Is(err, domain.ErrDuplicateEntry) {
 			return scim.Resource{}, scimerrors.ScimErrorUniqueness
 		}
 		return scim.Resource{}, scimerrors.ScimErrorInternal
 	}
+	slog.Debug("[SCIM] Create user success", "id", created.Identifier, "email", created.Email)
 	return domainUserToResource(created), nil
 }
 
 func (h *userHandler) Get(r *http.Request, id string) (scim.Resource, error) {
+	slog.Debug("[SCIM] Get user request", "id", id)
 	user, err := h.users.GetUser(r.Context(), domain.UserIdentifier(id))
 	if err != nil {
+		slog.Debug("[SCIM] Get user failed", "id", id, "error", err)
 		if errors.Is(err, domain.ErrNotFound) {
 			return scim.Resource{}, scimerrors.ScimErrorResourceNotFound(id)
 		}
@@ -52,13 +76,15 @@ func (h *userHandler) Get(r *http.Request, id string) (scim.Resource, error) {
 }
 
 func (h *userHandler) GetAll(r *http.Request, params scim.ListRequestParams) (scim.Page, error) {
+	slog.Debug("[SCIM] GetAll users request", "startIndex", params.StartIndex, "count", params.Count)
 	users, err := h.users.GetAllUsers(r.Context())
 	if err != nil {
+		slog.Debug("[SCIM] GetAll users failed", "error", err)
 		return scim.Page{}, scimerrors.ScimErrorInternal
 	}
 
 	// Filter
-	var filtered []scim.Resource
+	filtered := make([]scim.Resource, 0)
 	for i := range users {
 		res := domainUserToResource(&users[i])
 		if params.FilterValidator != nil {
@@ -91,21 +117,26 @@ func (h *userHandler) GetAll(r *http.Request, params scim.ListRequestParams) (sc
 }
 
 func (h *userHandler) Replace(r *http.Request, id string, attrs scim.ResourceAttributes) (scim.Resource, error) {
+	slog.Debug("[SCIM] Replace user request", "id", id, "userName", attrs["userName"])
 	user := attributesToDomainUser(attrs)
 	user.Identifier = domain.UserIdentifier(id)
 	updated, err := h.users.UpdateUser(r.Context(), user)
 	if err != nil {
+		slog.Debug("[SCIM] Replace user failed", "id", id, "error", err)
 		if errors.Is(err, domain.ErrNotFound) {
 			return scim.Resource{}, scimerrors.ScimErrorResourceNotFound(id)
 		}
 		return scim.Resource{}, scimerrors.ScimErrorInternal
 	}
+	slog.Debug("[SCIM] Replace user success", "id", id)
 	return domainUserToResource(updated), nil
 }
 
 func (h *userHandler) Patch(r *http.Request, id string, operations []scim.PatchOperation) (scim.Resource, error) {
+	slog.Debug("[SCIM] Patch user request", "id", id, "operations", len(operations))
 	existing, err := h.users.GetUser(r.Context(), domain.UserIdentifier(id))
 	if err != nil {
+		slog.Debug("[SCIM] Patch user lookup failed", "id", id, "error", err)
 		if errors.Is(err, domain.ErrNotFound) {
 			return scim.Resource{}, scimerrors.ScimErrorResourceNotFound(id)
 		}
@@ -113,6 +144,7 @@ func (h *userHandler) Patch(r *http.Request, id string, operations []scim.PatchO
 	}
 
 	for _, op := range operations {
+		slog.Debug("[SCIM] Patch operation", "id", id, "op", op.Op, "path", op.Path)
 		switch op.Op {
 		case scim.PatchOperationAdd, scim.PatchOperationReplace:
 			if op.Path != nil {
@@ -131,26 +163,32 @@ func (h *userHandler) Patch(r *http.Request, id string, operations []scim.PatchO
 
 	updated, err := h.users.UpdateUser(r.Context(), existing)
 	if err != nil {
+		slog.Debug("[SCIM] Patch user update failed", "id", id, "error", err)
 		return scim.Resource{}, scimerrors.ScimErrorInternal
 	}
+	slog.Debug("[SCIM] Patch user success", "id", id)
 	return domainUserToResource(updated), nil
 }
 
 func (h *userHandler) Delete(r *http.Request, id string) error {
+	slog.Debug("[SCIM] Delete user request", "id", id, "action", h.cfg.Scim.DeleteAction)
 	if h.cfg.Scim.DeleteAction == "delete" {
 		err := h.users.DeleteUser(r.Context(), domain.UserIdentifier(id))
 		if err != nil {
+			slog.Debug("[SCIM] Delete user failed", "id", id, "error", err)
 			if errors.Is(err, domain.ErrNotFound) {
 				return scimerrors.ScimErrorResourceNotFound(id)
 			}
 			return scimerrors.ScimErrorInternal
 		}
+		slog.Debug("[SCIM] Delete user success (hard delete)", "id", id)
 		return nil
 	}
 
 	// Default: disable
 	user, err := h.users.GetUser(r.Context(), domain.UserIdentifier(id))
 	if err != nil {
+		slog.Debug("[SCIM] Delete user lookup failed", "id", id, "error", err)
 		if errors.Is(err, domain.ErrNotFound) {
 			return scimerrors.ScimErrorResourceNotFound(id)
 		}
@@ -160,8 +198,10 @@ func (h *userHandler) Delete(r *http.Request, id string) error {
 	user.Disabled = &now
 	user.DisabledReason = "SCIM deprovisioned"
 	if _, err := h.users.UpdateUser(r.Context(), user); err != nil {
+		slog.Debug("[SCIM] Delete user disable failed", "id", id, "error", err)
 		return scimerrors.ScimErrorInternal
 	}
+	slog.Debug("[SCIM] Delete user success (disabled)", "id", id)
 	return nil
 }
 
