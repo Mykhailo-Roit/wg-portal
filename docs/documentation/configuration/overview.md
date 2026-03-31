@@ -1,9 +1,9 @@
 This page provides an overview of **all available configuration options** for WireGuard Portal.
 
 You can supply these configurations in a **YAML** file when starting the Portal.
-The path of the configuration file defaults to `config/config.yaml` (or `config/config.yml`) in the working directory of the executable.  
+The path of the configuration file defaults to `config/config.yaml` (or `config/config.yml`) in the working directory of the executable.
 It is possible to override the configuration filepath using the environment variable `WG_PORTAL_CONFIG`.
-For example: `WG_PORTAL_CONFIG=/etc/wg-portal/config.yaml ./wg-portal`.  
+For example: `WG_PORTAL_CONFIG=/etc/wg-portal/config.yaml ./wg-portal`.
 Also, environment variable substitution in the config file is supported. Refer to the [syntax](https://github.com/a8m/envsubst?tab=readme-ov-file#docs).
 
 Configuration examples are available on the [Examples](./examples.md) page.
@@ -25,7 +25,7 @@ core:
   self_provisioning_allowed: false
   import_existing: true
   restore_state: true
-  
+
 backend:
   default: local
   rekey_timeout_interval: 125s
@@ -105,6 +105,12 @@ webhook:
   url: ""
   authentication: ""
   timeout: 10s
+
+scim:
+  enabled: false
+  bearer_token: ""
+  delete_action: "disable"
+  provider_name: ""
 ```
 
 </details>
@@ -118,8 +124,9 @@ Below you will find sections like
 [`statistics`](#statistics),
 [`mail`](#mail),
 [`auth`](#auth),
-[`web`](#web) and
-[`webhook`](#webhook).  
+[`web`](#web),
+[`webhook`](#webhook) and
+[`scim`](#scim).
 Each section describes the individual configuration keys, their default values, and a brief explanation of their purpose.
 
 ---
@@ -201,20 +208,20 @@ The current MikroTik backend is in **BETA** and may not support all features.
 
 ### `default`
 - **Default:** `local`
-- **Description:** The default backend to use for managing WireGuard interfaces. 
+- **Description:** The default backend to use for managing WireGuard interfaces.
   Valid options are: `local`, or other backend id's configured in the `mikrotik` section.
 
 ### `rekey_timeout_interval`
 - **Default:** `180s`
 - **Environment Variable:** `WG_PORTAL_BACKEND_REKEY_TIMEOUT_INTERVAL`
-- **Description:** The interval after which a WireGuard peer is considered disconnected if no handshake updates are received. 
+- **Description:** The interval after which a WireGuard peer is considered disconnected if no handshake updates are received.
   This corresponds to the WireGuard rekey timeout setting of 120 seconds plus a 60-second buffer to account for latency or retry handling.
   Uses Go duration format (e.g., `10s`, `1m`). If omitted, a default of 180 seconds is used.
 
 ### `local_resolvconf_prefix`
 - **Default:** `tun.`
 - **Environment Variable:** `WG_PORTAL_BACKEND_LOCAL_RESOLVCONF_PREFIX`
-- **Description:** Interface name prefix for WireGuard interfaces on the local system which is used to configure DNS servers with *resolvconf*. 
+- **Description:** Interface name prefix for WireGuard interfaces on the local system which is used to configure DNS servers with *resolvconf*.
   It depends on the *resolvconf* implementation you are using, most use a prefix of `tun.`, but some have an empty prefix (e.g., systemd).
 
 ### `ignored_local_interfaces`
@@ -232,7 +239,7 @@ Below are the properties for each entry inside `backend.mikrotik`:
 
 #### `id`
 - **Default:** *(empty)*
-- **Description:** A unique identifier for this backend. 
+- **Description:** A unique identifier for this backend.
   This value can be referenced by `backend.default` to use this backend as default.
   The identifier must be unique across all backends and must not use the reserved keyword `local`.
 
@@ -351,7 +358,7 @@ Additional or more specialized configuration options for logging and interface c
 
 ## Database
 
-Configuration for the underlying database used by WireGuard Portal. 
+Configuration for the underlying database used by WireGuard Portal.
 Supported databases include SQLite, MySQL, Microsoft SQL Server, and Postgres.
 
 If sensitive values (like private keys) should be stored in an encrypted format, set the `encryption_passphrase` option.
@@ -374,7 +381,7 @@ If sensitive values (like private keys) should be stored in an encrypted format,
 ### `dsn`
 - **Default:** `data/sqlite.db`
 - **Environment Variable:** `WG_PORTAL_DATABASE_DSN`
-- **Description:** The Data Source Name (DSN) for connecting to the database.  
+- **Description:** The Data Source Name (DSN) for connecting to the database.
   For example:
   ```text
   user:pass@tcp(1.2.3.4:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local
@@ -384,7 +391,7 @@ If sensitive values (like private keys) should be stored in an encrypted format,
 - **Default:** *(empty)*
 - **Environment Variable:** `WG_PORTAL_DATABASE_ENCRYPTION_PASSPHRASE`
 - **Description:** Passphrase for encrypting sensitive values such as private keys in the database. Encryption is only applied if this passphrase is set.
-  **Important:** Once you enable encryption by setting this passphrase, you cannot disable it or change it afterward. 
+  **Important:** Once you enable encryption by setting this passphrase, you cannot disable it or change it afterward.
   New or updated records will be encrypted; existing data remains in plaintext until it’s next modified.
 
 ---
@@ -442,8 +449,8 @@ Controls how WireGuard Portal collects and reports usage statistics, including p
 
 ## Mail
 
-Options for configuring email notifications or sending peer configurations via email. 
-By default, emails will only be sent to peers that have a valid user record linked. 
+Options for configuring email notifications or sending peer configurations via email.
+By default, emails will only be sent to peers that have a valid user record linked.
 To send emails to all peers that have a valid email-address as user-identifier, set `allow_peer_email` to `true`.
 
 ### `host`
@@ -524,13 +531,13 @@ Some core authentication options are shared across all providers, while others a
 - **Environment Variable:** `WG_PORTAL_AUTH_HIDE_LOGIN_FORM`
 - **Description:** If `true`, the login form is hidden and only the OIDC, OAuth, LDAP, or WebAuthn providers are shown. This is useful if you want to enforce a specific authentication method.
   If no social login providers are configured, the login form is always shown, regardless of this setting.
-- **Important:** You can still access the login form by adding the `?all` query parameter to the login URL (e.g. https://wg.portal/#/login?all). 
+- **Important:** You can still access the login form by adding the `?all` query parameter to the login URL (e.g. https://wg.portal/#/login?all).
 
 ---
 
 ### OIDC
 
-The `oidc` array contains a list of OpenID Connect providers. 
+The `oidc` array contains a list of OpenID Connect providers.
 Below are the properties for each OIDC provider entry inside `auth.oidc`:
 
 #### `provider_name`
@@ -563,11 +570,11 @@ Below are the properties for each OIDC provider entry inside `auth.oidc`:
 
 #### `field_map`
 - **Default:** *(empty)*
-- **Description:** Maps OIDC claims to WireGuard Portal user fields. 
+- **Description:** Maps OIDC claims to WireGuard Portal user fields.
   - Available fields: `user_identifier`, `email`, `firstname`, `lastname`, `phone`, `department`, `is_admin`, `user_groups`.
 
     | **Field**         | **Typical OIDC Claim**            | **Explanation**                                                                                                                                                                                         |
-    |-------------------|-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+    | ----------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `user_identifier` | `sub` or `preferred_username`     | A unique identifier for the user. Often the OIDC `sub` claim is used because it’s guaranteed to be unique for the user within the IdP. Some providers also support `preferred_username` if it’s unique. |
     | `email`           | `email`                           | The user’s email address as provided by the IdP. Not always verified, depending on IdP settings.                                                                                                        |
     | `firstname`       | `given_name`                      | The user’s first name, typically provided by the IdP in the `given_name` claim.                                                                                                                         |
@@ -645,7 +652,7 @@ Below are the properties for each OAuth provider entry inside `auth.oauth`:
   - Available fields: `user_identifier`, `email`, `firstname`, `lastname`, `phone`, `department`, `is_admin`, `user_groups`.
 
     | **Field**         | **Typical Claim**                 | **Explanation**                                                                                                                                                                                         |
-    |-------------------|-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+    | ----------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `user_identifier` | `sub` or `preferred_username`     | A unique identifier for the user. Often the OIDC `sub` claim is used because it’s guaranteed to be unique for the user within the IdP. Some providers also support `preferred_username` if it’s unique. |
     | `email`           | `email`                           | The user’s email address as provided by the IdP. Not always verified, depending on IdP settings.                                                                                                        |
     | `firstname`       | `given_name`                      | The user’s first name, typically provided by the IdP in the `given_name` claim.                                                                                                                         |
@@ -721,9 +728,9 @@ Below are the properties for each LDAP provider entry inside `auth.ldap`:
 - **Default:** *(empty)*
 - **Description:** Maps LDAP attributes to WireGuard Portal fields.
     - Available fields: `user_identifier`, `email`, `firstname`, `lastname`, `phone`, `department`, `memberof`.
-  
+
       | **WireGuard Portal Field** | **Typical LDAP Attribute** | **Short Description**                                        |
-      |----------------------------|----------------------------|--------------------------------------------------------------|
+      | -------------------------- | -------------------------- | ------------------------------------------------------------ |
       | user_identifier            | sAMAccountName / uid       | Uniquely identifies the user within the LDAP directory.      |
       | email                      | mail / userPrincipalName   | Stores the user's primary email address.                     |
       | firstname                  | givenName                  | Contains the user's first (given) name.                      |
@@ -739,7 +746,7 @@ Below are the properties for each LDAP provider entry inside `auth.ldap`:
   ```text
   (&(objectClass=organizationalPerson)(mail={{login_identifier}})(!userAccountControl:1.2.840.113556.1.4.803:=2))
   ```
-- **Important**: The `login_filter` must always be a valid LDAP filter. It should at most return one user. 
+- **Important**: The `login_filter` must always be a valid LDAP filter. It should at most return one user.
   If the filter returns multiple or no users, the login will fail.
 
 #### `interface_filter`
@@ -803,13 +810,13 @@ The `webauthn` section contains configuration options for WebAuthn authenticatio
 - **Default:** `true`
 - **Environment Variable:** `WG_PORTAL_AUTH_WEBAUTHN_ENABLED`
 - **Description:** If `true`, Passkey authentication is enabled. If `false`, WebAuthn is disabled.
-  Users are encouraged to use Passkeys for secure authentication instead of passwords. 
+  Users are encouraged to use Passkeys for secure authentication instead of passwords.
   If a passkey is registered, the password login is still available as a fallback. Ensure that the password is strong and secure.
 
 ## Web
 
 The web section contains configuration options for the web server, including the listening address, session management, and CSRF protection.
-It is important to specify a valid `external_url` for the web server, especially if you are using a reverse proxy. 
+It is important to specify a valid `external_url` for the web server, especially if you are using a reverse proxy.
 Without a valid `external_url`, the login process may fail due to CSRF protection.
 
 ### `listening_address`
@@ -828,7 +835,7 @@ Without a valid `external_url`, the login process may fail due to CSRF protectio
 ### `base_path`
 - **Default:** *(empty)*
 - **Environment Variable:** `WG_PORTAL_WEB_BASE_PATH`
-- **Description:** The base path for the web server (e.g., `/wgportal`). 
+- **Description:** The base path for the web server (e.g., `/wgportal`).
   By default (meaning an empty value), the portal will be served from the root path `/`.
 
 ### `site_company_name`
@@ -905,3 +912,38 @@ Further details can be found in the [usage documentation](../usage/webhooks.md).
 - **Default:** `10s`
 - **Environment Variable:** `WG_PORTAL_WEBHOOK_TIMEOUT`
 - **Description:** The timeout for the webhook request. If the request takes longer than this, it is aborted.
+
+---
+
+## SCIM
+
+The SCIM section enables [SCIM v2.0](https://datatracker.ietf.org/doc/html/rfc7644) provisioning for automated user lifecycle management from external identity providers such as Microsoft Entra ID (Azure AD), Okta, or OneLogin.
+
+When enabled, WireGuard Portal exposes a SCIM endpoint at `{base_path}/scim/v2/` that supports user provisioning, deprovisioning, and profile synchronization.
+For usage details, see the [SCIM Provisioning](../usage/user-sync.md#scim-provisioning) documentation.
+
+### `enabled`
+- **Default:** `false`
+- **Environment Variable:** `WG_PORTAL_SCIM_ENABLED`
+- **Description:** Enable the SCIM v2.0 provisioning endpoint.
+
+### `bearer_token`
+- **Default:** *(empty)*
+- **Environment Variable:** `WG_PORTAL_SCIM_BEARER_TOKEN`
+- **Description:** The bearer token used to authenticate SCIM requests. All requests to the SCIM endpoint must include an `Authorization: Bearer <token>` header with this value.
+- **Important:** Use a strong, randomly generated token. This token is shared with your identity provider's SCIM configuration.
+
+### `delete_action`
+- **Default:** `disable`
+- **Environment Variable:** `WG_PORTAL_SCIM_DELETE_ACTION`
+- **Description:** Controls what happens when the identity provider sends a SCIM DELETE request (user deprovisioning). Valid options:
+    - `disable` — The user is disabled in WireGuard Portal but not removed. This is the recommended and default behavior.
+    - `delete` — The user is permanently deleted from WireGuard Portal.
+
+### `provider_name`
+- **Default:** *(empty)*
+- **Environment Variable:** `WG_PORTAL_SCIM_PROVIDER_NAME`
+- **Description:** Links SCIM-provisioned users to an existing OIDC or OAuth provider. Set this to the `provider_name` of the corresponding authentication provider (e.g., `EntraID`).
+  When set, users created via SCIM will use the same authentication source as users who log in via the linked OIDC/OAuth provider, preventing duplicate authentication entries.
+  If a user already exists (e.g., from a prior OIDC login), SCIM will update their profile instead of creating a duplicate.
+  If empty, SCIM-provisioned users are created with a `scim` provider name.
