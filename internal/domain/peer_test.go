@@ -84,13 +84,32 @@ func TestPeer_ApplyInterfaceDefaults(t *testing.T) {
 
 func TestPeer_GenerateDisplayName(t *testing.T) {
 	peer := &Peer{Identifier: "12345678"}
-	peer.GenerateDisplayName("Prefix")
-	expected := "Prefix Peer 12345678"
-	assert.Equal(t, expected, peer.DisplayName)
+	peer.GenerateDisplayName("Prefix", "", nil)
+	// With empty template and nil user, default "Peer {{.Random}}" is used — prefix is ignored on success
+	assert.Regexp(t, `^Peer [A-Za-z0-9]{8}$`, peer.DisplayName)
 
-	peer.GenerateDisplayName("")
-	expected = "Peer 12345678"
-	assert.Equal(t, expected, peer.DisplayName)
+	peer.GenerateDisplayName("", "", nil)
+	assert.Regexp(t, `^Peer [A-Za-z0-9]{8}$`, peer.DisplayName)
+}
+
+func TestGenerateDisplayName_WithTemplate(t *testing.T) {
+	peer := &Peer{Identifier: "12345678"}
+	user := &User{Email: "alice@example.com", Firstname: "Alice", Lastname: "Smith"}
+	peer.GenerateDisplayName("", "{{.Email}}", user)
+	assert.Equal(t, "alice@example.com", peer.DisplayName)
+}
+
+func TestGenerateDisplayName_FallbackOnError(t *testing.T) {
+	peer := &Peer{Identifier: "12345678"}
+	peer.GenerateDisplayName("Prefix", "{{.Unclosed", nil)
+	assert.Equal(t, "Prefix Peer 12345678", peer.DisplayName)
+}
+
+func TestGenerateDisplayName_EmptyTemplate(t *testing.T) {
+	peer := &Peer{Identifier: "12345678"}
+	// Empty template triggers default "Peer {{.Random}}" — NOT legacy prefix behavior
+	peer.GenerateDisplayName("Prefix", "", nil)
+	assert.Regexp(t, `^Peer [A-Za-z0-9]{8}$`, peer.DisplayName)
 }
 
 func TestPeer_OverwriteUserEditableFields(t *testing.T) {
@@ -163,4 +182,58 @@ func TestPeer_GetAllowedIPs(t *testing.T) {
 	assert.Len(t, ips2, 2)
 	assert.Equal(t, "192.168.1.0/24", ips2[0].String())
 	assert.Equal(t, "fe80::/64", ips2[1].String())
+}
+
+// --- ApplyPeerNameTemplate tests ---
+
+func TestApplyPeerNameTemplate_Variables(t *testing.T) {
+	data := PeerNameTemplateData{
+		Id:        "abcd1234",
+		Random:    "Xy7Zq2Lm",
+		Email:     "alice@example.com",
+		Firstname: "Alice",
+		Lastname:  "Smith",
+		PeerName:  "Peer abcd1234",
+	}
+
+	cases := []struct {
+		tmpl     string
+		expected string
+	}{
+		{"{{.Id}}", data.Id},
+		{"{{.Random}}", data.Random},
+		{"{{.Email}}", data.Email},
+		{"{{.Firstname}}", data.Firstname},
+		{"{{.Lastname}}", data.Lastname},
+		{"{{.PeerName}}", data.PeerName},
+	}
+
+	for _, tc := range cases {
+		result, err := ApplyPeerNameTemplate(tc.tmpl, data)
+		assert.NoError(t, err, "template: %s", tc.tmpl)
+		assert.Equal(t, tc.expected, result, "template: %s", tc.tmpl)
+	}
+}
+
+func TestApplyPeerNameTemplate_InvalidTemplate(t *testing.T) {
+	data := PeerNameTemplateData{}
+	_, err := ApplyPeerNameTemplate("{{.Unclosed", data)
+	assert.Error(t, err)
+}
+
+func TestApplyPeerNameTemplate_EmptyUserFields(t *testing.T) {
+	data := PeerNameTemplateData{
+		Id:        "abcd1234",
+		Random:    "Xy7Zq2Lm",
+		Email:     "",
+		Firstname: "",
+		Lastname:  "",
+		PeerName:  "Peer abcd1234",
+	}
+
+	for _, tmpl := range []string{"{{.Email}}", "{{.Firstname}}", "{{.Lastname}}"} {
+		result, err := ApplyPeerNameTemplate(tmpl, data)
+		assert.NoError(t, err, "template: %s", tmpl)
+		assert.Equal(t, "", result, "template: %s", tmpl)
+	}
 }

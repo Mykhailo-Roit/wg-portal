@@ -21,14 +21,15 @@ type Config struct {
 		AdminPassword     string `yaml:"admin_password"`
 		AdminApiToken     string `yaml:"admin_api_token"` // if set, the API access is enabled automatically
 
-		EditableKeys                bool `yaml:"editable_keys"`
-		CreateDefaultPeer           bool `yaml:"create_default_peer"`
-		CreateDefaultPeerOnCreation bool `yaml:"create_default_peer_on_creation"`
-		ReEnablePeerAfterUserEnable bool `yaml:"re_enable_peer_after_user_enable"`
-		DeletePeerAfterUserDeleted  bool `yaml:"delete_peer_after_user_deleted"`
-		SelfProvisioningAllowed     bool `yaml:"self_provisioning_allowed"`
-		ImportExisting              bool `yaml:"import_existing"`
-		RestoreState                bool `yaml:"restore_state"`
+		EditableKeys                bool   `yaml:"editable_keys"`
+		CreateDefaultPeer           bool   `yaml:"create_default_peer"`
+		CreateDefaultPeerOnCreation bool   `yaml:"create_default_peer_on_creation"`
+		ReEnablePeerAfterUserEnable bool   `yaml:"re_enable_peer_after_user_enable"`
+		DeletePeerAfterUserDeleted  bool   `yaml:"delete_peer_after_user_deleted"`
+		SelfProvisioningAllowed     bool   `yaml:"self_provisioning_allowed"`
+		ImportExisting              bool   `yaml:"import_existing"`
+		RestoreState                bool   `yaml:"restore_state"`
+		PeerTemplateName            string `yaml:"peer_template_name"`
 	} `yaml:"core"`
 
 	Advanced struct {
@@ -128,6 +129,7 @@ func defaultConfig() *Config {
 	cfg.Core.SelfProvisioningAllowed = getEnvBool("WG_PORTAL_CORE_SELF_PROVISIONING_ALLOWED", false)
 	cfg.Core.ReEnablePeerAfterUserEnable = getEnvBool("WG_PORTAL_CORE_RE_ENABLE_PEER_AFTER_USER_ENABLE", true)
 	cfg.Core.DeletePeerAfterUserDeleted = getEnvBool("WG_PORTAL_CORE_DELETE_PEER_AFTER_USER_DELETED", false)
+	cfg.Core.PeerTemplateName = getEnvStr("WG_PORTAL_CORE_PEER_TEMPLATE_NAME", "Peer {{.Random}}")
 
 	cfg.Database = DatabaseConfig{
 		Debug:                getEnvBool("WG_PORTAL_DATABASE_DEBUG", false),

@@ -25,6 +25,7 @@ core:
   self_provisioning_allowed: false
   import_existing: true
   restore_state: true
+  peer_template_name: "Peer {{.Random}}"
   
 backend:
   default: local
@@ -191,6 +192,33 @@ More advanced options are found in the subsequent `Advanced` section.
 - **Default:** `true`
 - **Environment Variable:** `WG_PORTAL_CORE_RESTORE_STATE`
 - **Description:** Restore the WireGuard interface states (up/down) that existed before WireGuard Portal started.
+
+### `peer_template_name`
+- **Default:** `"Peer {{.Random}}"`
+- **Environment Variable:** `WG_PORTAL_CORE_PEER_TEMPLATE_NAME`
+- **Description:** A Go template string used to generate the display name for newly created peers.
+  The template is evaluated once at peer creation time. If empty or not set, the default `"Peer {{.Random}}"` is used, which preserves the existing naming behavior (e.g., `Peer 9ZU4xXRg`).
+
+  **Supported template variables** (note: variable names use Go template capitalization conventions):
+
+  | Variable          | Description                                                                 |
+  |-------------------|-----------------------------------------------------------------------------|
+  | `{{.Id}}`         | First 8 characters of the peer's public key identifier                      |
+  | `{{.Random}}`     | A randomly generated 8-character alphanumeric string (e.g., `9ZU4xXRg`)    |
+  | `{{.Email}}`      | Email address of the linked user (empty string if no user is linked)        |
+  | `{{.Firstname}}`  | First name of the linked user (empty string if not set)                     |
+  | `{{.Lastname}}`   | Last name of the linked user (empty string if not set)                      |
+  | `{{.PeerName}}`   | Legacy default name fragment: `Peer <Id>` (without any prefix)              |
+
+  **Examples:**
+  ```yaml
+  peer_template_name: "Peer {{.Random}}"          # default — e.g., Peer 9ZU4xXRg
+  peer_template_name: "Peer {{.Email}}"           # e.g., Peer alice@example.com
+  peer_template_name: "{{.Firstname}} {{.Lastname}} VPN"  # e.g., Alice Smith VPN
+  peer_template_name: "{{.Id}}-vpn"               # e.g., abcd1234-vpn
+  ```
+
+  If the template contains invalid Go template syntax, an error is logged and the system falls back to the default naming behavior.
 
 ---
 

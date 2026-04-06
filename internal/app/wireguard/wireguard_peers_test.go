@@ -256,3 +256,50 @@ func TestCreateDefaultPeer_RespectsInterfaceFlag(t *testing.T) {
 		t.Fatalf("expected 1 peer to be created because interface flag is true, but got %d", len(db.savedPeers))
 	}
 }
+
+// Feature: peer-template-name, Property 5: Caller-provided DisplayName is preserved
+// Validates: Requirements 2.2, 3.3
+// When a peer is created with an explicit DisplayName, the template is NOT applied.
+func TestProperty5_CallerProvidedDisplayNamePreserved(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Core.SelfProvisioningAllowed = true
+	cfg.Core.EditableKeys = true
+	cfg.Core.PeerTemplateName = "{{.Email}}" // template configured
+
+	bus := &mockBus{}
+	ctrlMgr := &ControllerManager{
+		controllers: map[domain.InterfaceBackend]backendInstance{
+			config.LocalBackendName: {Implementation: &mockController{}},
+		},
+	}
+	db := &mockDB{iface: &domain.Interface{Identifier: "wg0", Type: domain.InterfaceTypeServer}}
+
+	m := Manager{cfg: cfg, bus: bus, db: db, wg: ctrlMgr}
+
+	callerNames := []string{"My Custom Peer", "alice-vpn", "Peer 001", "test peer name"}
+
+	for _, callerName := range callerNames {
+		db.savedPeers = nil // reset between runs
+
+		userId := domain.UserIdentifier("user@example.com")
+		ctx := domain.SetUserInfo(context.Background(), &domain.ContextUserInfo{Id: userId, IsAdmin: true})
+
+		input := &domain.Peer{
+			DisplayName:         callerName,
+			UserIdentifier:      userId,
+			InterfaceIdentifier: domain.InterfaceIdentifier("wg0"),
+			Interface: domain.PeerInterfaceConfig{
+				KeyPair: domain.KeyPair{PublicKey: "PUBKEY_" + callerName},
+			},
+		}
+
+		out, err := m.CreatePeer(ctx, input)
+		if err != nil {
+			t.Fatalf("CreatePeer returned error for callerName %q: %v", callerName, err)
+		}
+
+		if out.DisplayName != callerName {
+			t.Fatalf("expected DisplayName %q to be preserved, got %q", callerName, out.DisplayName)
+		}
+	}
+}

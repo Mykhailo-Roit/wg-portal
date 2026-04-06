@@ -163,7 +163,12 @@ func (p ProvisioningService) NewPeer(ctx context.Context, req models.Provisionin
 		peer.PresharedKey = domain.PreSharedKey(req.PresharedKey)
 	}
 	if req.DisplayName == "" {
-		peer.GenerateDisplayName("API")
+		// Fetch linked user for template data (nil-safe)
+		var linkedUser *domain.User
+		if u, err := p.users.GetUser(ctx, domain.UserIdentifier(req.UserIdentifier)); err == nil {
+			linkedUser = u
+		}
+		peer.GenerateDisplayName("API", p.cfg.Core.PeerTemplateName, linkedUser)
 	} else {
 		peer.DisplayName = req.DisplayName
 	}

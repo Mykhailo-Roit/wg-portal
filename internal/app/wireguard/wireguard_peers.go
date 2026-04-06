@@ -54,7 +54,13 @@ func (m Manager) CreateDefaultPeer(ctx context.Context, userId domain.UserIdenti
 		peer.UserIdentifier = userId
 		peer.Notes = fmt.Sprintf("Default peer created for user %s", userId)
 		peer.AutomaticallyCreated = true
-		peer.GenerateDisplayName("Default")
+
+		// Fetch linked user for template data
+		var linkedUser *domain.User
+		if u, err := m.db.GetUser(ctx, userId); err == nil {
+			linkedUser = u
+		}
+		peer.GenerateDisplayName("Default", m.cfg.Core.PeerTemplateName, linkedUser)
 
 		newPeers = append(newPeers, *peer)
 	}
@@ -163,7 +169,17 @@ func (m Manager) PreparePeer(ctx context.Context, id domain.InterfaceIdentifier)
 			PostDown:          domain.NewConfigOption(iface.PeerDefPostDown, true),
 		},
 	}
-	freshPeer.GenerateDisplayName("")
+	// Fetch the current user object for template data (nil-safe: user fields default to "")
+	var currentUserObj *domain.User
+	if currentUser.Id != "" {
+		if u, err := m.db.GetUser(ctx, currentUser.Id); err == nil {
+			currentUserObj = u
+		}
+	}
+	freshPeer.GenerateDisplayName("", m.cfg.Core.PeerTemplateName, currentUserObj)
+	slog.DebugContext(ctx, "PreparePeer applied peer name template",
+		"peerId", freshPeer.Identifier,
+		"displayName", freshPeer.DisplayName)
 
 	return freshPeer, nil
 }
@@ -279,7 +295,7 @@ func (m Manager) CreateMultiplePeers(
 		}
 
 		freshPeer.UserIdentifier = domain.UserIdentifier(id) // use id as user identifier. peers are allowed to have invalid user identifiers
-		if r.Prefix != "" {
+		if r.Prefix != "" && m.cfg.Core.PeerTemplateName == "" {
 			freshPeer.DisplayName = r.Prefix + " " + freshPeer.DisplayName
 		}
 

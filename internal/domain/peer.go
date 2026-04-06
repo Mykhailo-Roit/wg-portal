@@ -1,10 +1,14 @@
 package domain
 
 import (
+	"bytes"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strings"
+	"text/template"
 	"time"
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -13,6 +17,48 @@ import (
 	"github.com/h44z/wg-portal/internal"
 	"github.com/h44z/wg-portal/internal/config"
 )
+
+// PeerNameTemplateData holds the variables available in peer name templates.
+type PeerNameTemplateData struct {
+	Id        string // first 8 chars of peer public key
+	Random    string // 8-char random alphanumeric string
+	Email     string // linked user's email, or ""
+	Firstname string // linked user's first name, or ""
+	Lastname  string // linked user's last name, or ""
+	PeerName  string // "Peer <Id>" — the legacy default name without prefix
+}
+
+const randomStringCharset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+// generateRandomString returns an n-character alphanumeric string using crypto/rand.
+func generateRandomString(n int) string {
+	b := make([]byte, n)
+	_, err := rand.Read(b)
+	if err != nil {
+		// fallback: return zeros as base62 chars
+		for i := range b {
+			b[i] = randomStringCharset[0]
+		}
+		return string(b)
+	}
+	for i := range b {
+		b[i] = randomStringCharset[int(b[i])%len(randomStringCharset)]
+	}
+	return string(b)
+}
+
+// ApplyPeerNameTemplate parses and executes tmpl against data, returning the rendered string.
+func ApplyPeerNameTemplate(tmpl string, data PeerNameTemplateData) (string, error) {
+	t, err := template.New("peer_name").Parse(tmpl)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse peer name template: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("failed to execute peer name template: %w", err)
+	}
+	return buf.String(), nil
+}
 
 type PeerIdentifier string
 
@@ -125,11 +171,39 @@ func (p *Peer) ApplyInterfaceDefaults(in *Interface) {
 	p.Interface.PostDown.TrySetValue(in.PeerDefPostDown)
 }
 
-func (p *Peer) GenerateDisplayName(prefix string) {
-	if prefix != "" {
-		prefix = fmt.Sprintf("%s ", strings.TrimSpace(prefix)) // add a space after the prefix
+func (p *Peer) GenerateDisplayName(prefix string, tmpl string, user *User) {
+	// Build template data
+	id := internal.TruncateString(string(p.Identifier), 8)
+	data := PeerNameTemplateData{
+		Id:       id,
+		Random:   generateRandomString(8),
+		PeerName: "Peer " + id,
 	}
-	p.DisplayName = fmt.Sprintf("%sPeer %s", prefix, internal.TruncateString(string(p.Identifier), 8))
+	if user != nil {
+		data.Email = user.Email
+		data.Firstname = user.Firstname
+		data.Lastname = user.Lastname
+	}
+
+	// Determine effective template
+	effectiveTmpl := tmpl
+	if effectiveTmpl == "" {
+		effectiveTmpl = "Peer {{.Random}}"
+	}
+
+	result, err := ApplyPeerNameTemplate(effectiveTmpl, data)
+	if err != nil {
+		slog.Error("failed to apply peer name template", "template", tmpl, "error", err)
+		// Fallback to legacy behavior
+		if prefix != "" {
+			prefix = fmt.Sprintf("%s ", strings.TrimSpace(prefix))
+		}
+		p.DisplayName = fmt.Sprintf("%sPeer %s", prefix, id)
+		return
+	}
+
+	p.DisplayName = result
+	slog.Debug("peer display name generated from template", "template", tmpl, "displayName", p.DisplayName)
 }
 
 // OverwriteUserEditableFields overwrites the user-editable fields of the peer with the values from the userPeer
