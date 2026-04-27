@@ -11,12 +11,18 @@ services:
     cap_add:
       - NET_ADMIN
     # Use host network mode for WireGuard and the UI. Ensure that access to the UI is properly secured.
-    network_mode: "host"
+    # network_mode: "host"
+    ports:
+      # - "51820:51820/udp" # WireGuard port
+      - "8888:8888" # UI port
+      - "8787:8787" # monitoring port for /metrics
     volumes:
       # left side is the host path, right side is the container path
-      - /etc/wireguard:/etc/wireguard
+      - ./etc/wireguard:/etc/wireguard
+      # - ./config/wg-portal/config.yaml:/etc/wg-portal/config.yaml
       - ./data:/app/data
       - ./config:/app/config
-#    restart: no
-#    command: ["-migrateFrom=/app/data/wg_portal.db"]
-
+      # replace local build binnary
+      - ./dist/wg-portal-arm64:/app/wg-portal
+    #    restart: no
+    #    command: ["-migrateFrom=/app/data/wg_portal.db"]
