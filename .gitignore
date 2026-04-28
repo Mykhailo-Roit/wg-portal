@@ -41,3 +41,10 @@ venv/
 internal/app/api/core/frontend-dist
 # mkdocs output directory
 site/
+.grepai/
+etc/
+.kiro/
+# rapid property-test failure corpus
+internal/app/wireguard/testdata/
+tmp
+tmp1/

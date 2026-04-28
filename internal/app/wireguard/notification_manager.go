@@ -186,28 +186,31 @@ func (nm *NotificationManager) processPeerNotifications(ctx context.Context, pee
 		}
 
 		// Send the notification email (Requirement 4.6).
-		if err := nm.mailer.SendExpiryNotification(ctx, peer, user, daysLeft); err != nil {
-			// Log error and continue with remaining peers/intervals (Requirement 4.7).
+		sendErr := nm.mailer.SendExpiryNotification(ctx, peer, user, daysLeft)
+		if sendErr != nil {
 			slog.Error("notification manager: failed to send expiry notification",
 				"peer", peer.Identifier,
 				"interval", interval,
-				"error", err)
-			continue
+				"error", sendErr)
 		}
 
-		// Persist the record so we don't re-send (Requirement 6.1).
+		// Persist the record regardless of send outcome so that a broken SMTP
+		// server does not cause infinite retries every cycle (Requirement 6.1).
 		rec := domain.PeerNotificationRecord{
 			PeerIdentifier:  peer.Identifier,
 			IntervalSeconds: int64(interval.Seconds()),
 			SentAt:          now,
+			Status:          "sent",
+		}
+		if sendErr != nil {
+			rec.Status = "failed"
+			rec.StatusDescription = sendErr.Error()
 		}
 		if err := nm.notifRepo.SaveNotificationRecord(ctx, rec); err != nil {
-			slog.Warn("notification manager: failed to save notification record after successful send",
+			slog.Warn("notification manager: failed to save notification record",
 				"peer", peer.Identifier,
 				"interval", interval,
 				"error", err)
-			// The email was sent; the record may be re-sent on the next cycle.
-			// This is an acceptable trade-off per the design's error-handling table.
 		}
 
 		// Add to local cache so subsequent intervals in this same cycle see the record.
