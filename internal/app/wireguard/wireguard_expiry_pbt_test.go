@@ -147,7 +147,6 @@ func TestProperty13_DisableAction_PeerDisabledWithRFC3339Reason(t *testing.T) {
 }
 
 // Feature: peer-rotation-interval, Property 14: action=delete → peer removed from storage
-// Validates: Requirements 1.9
 func TestProperty14_DeleteAction_PeerRemovedFromStorage(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		// Generate a past expiry time (between 1 second and 365 days ago)

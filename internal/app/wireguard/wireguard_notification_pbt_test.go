@@ -164,7 +164,6 @@ func buildNotifPeer(pubKey string, expiresAt *time.Time) *domain.Peer {
 }
 
 // Feature: peer-rotation-interval, Property 10: records cleared when ExpiresAt extended
-// Validates: Requirements 6.3
 func TestProperty10_UpdatePeer_ExpiresAtExtended_ClearsNotificationRecords(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		pubKey := rapid.StringMatching(`[A-Za-z0-9+/]{43}=`).Draw(t, "pubKey")
@@ -220,7 +219,6 @@ func TestProperty10_UpdatePeer_ExpiresAtExtended_ClearsNotificationRecords(t *te
 }
 
 // Feature: peer-rotation-interval, Property 11: records deleted when peer deleted
-// Validates: Requirements 6.4
 func TestProperty11_DeletePeer_ClearsNotificationRecords(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		pubKey := rapid.StringMatching(`[A-Za-z0-9+/]{43}=`).Draw(t, "pubKey")
@@ -276,7 +274,6 @@ func TestProperty11_DeletePeer_ClearsNotificationRecords(t *testing.T) {
 }
 
 // Feature: peer-rotation-interval, Property 10b: records cleared when ExpiresAt newly set (prev==nil)
-// Validates: Requirements 6.3 (unified condition — Task 5 acceptance criterion)
 func TestProperty10b_UpdatePeer_ExpiresAtNewlySet_ClearsNotificationRecords(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		pubKey := rapid.StringMatching(`[A-Za-z0-9+/]{43}=`).Draw(t, "pubKey")

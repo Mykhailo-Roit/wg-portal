@@ -419,7 +419,7 @@ func (m Manager) UpdatePeer(ctx context.Context, peer *domain.Peer) (*domain.Pee
 	}
 
 	// Clear persisted notifications whenever the new ExpiresAt supersedes the old
-	// one, so emails are re-sent relative to the updated expiry (Requirement 6.3).
+	// one, so emails are re-sent relative to the updated expiry
 	if peer.ExpiresAt != nil {
 		prev := existingPeer.ExpiresAt
 		if prev == nil || peer.ExpiresAt.After(*prev) {
@@ -461,7 +461,7 @@ func (m Manager) DeletePeer(ctx context.Context, id domain.PeerIdentifier) error
 		return fmt.Errorf("unable to find interface %s: %w", peer.InterfaceIdentifier, err)
 	}
 
-	// Delete notification records before removing the peer (Requirement 6.4)
+	// Delete notification records before removing the peer
 	if err := m.notifRepo.DeleteNotificationRecordsForPeer(ctx, id); err != nil {
 		slog.WarnContext(ctx, "failed to delete notification records for peer",
 			"peer", id,

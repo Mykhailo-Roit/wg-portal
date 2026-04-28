@@ -1,7 +1,6 @@
 package mail
 
 // Feature: peer-rotation-interval, Property 9: rendered email contains required content
-// Validates: Requirements 5.2, 5.3
 
 import (
 	"fmt"

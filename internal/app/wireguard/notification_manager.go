@@ -12,7 +12,7 @@ import (
 
 // NotificationRepository persists and retrieves peer expiry notification records.
 // It is used by the NotificationManager to enforce the at-most-once guarantee
-// across process restarts (Requirements 6.1, 6.2).
+// across process restarts
 type NotificationRepository interface {
 	// SaveNotificationRecord persists a record indicating that an expiry warning
 	// email has been sent for the given peer and interval.
@@ -67,7 +67,7 @@ func NewNotificationManager(
 	}
 }
 
-// Run starts the notification check loop. It exits when ctx is cancelled (Requirement 7.3).
+// Run starts the notification check loop. It exits when ctx is cancelled.
 func (nm *NotificationManager) Run(ctx context.Context) {
 	for {
 		select {
@@ -80,9 +80,9 @@ func (nm *NotificationManager) Run(ctx context.Context) {
 }
 
 // checkAndNotify iterates all interfaces and peers, sends notifications where due,
-// then prunes old notification records (Requirements 3.4, 3.5, 3.7, 4.1–4.7, 7.1).
+// then prunes old notification records
 func (nm *NotificationManager) checkAndNotify(ctx context.Context) {
-	// Early-return when notifications are disabled or no intervals configured (Requirements 3.4, 3.5).
+	// Early-return when notifications are disabled or no intervals configured.
 	if !nm.cfg.Core.Peer.ExpiryNotificationEnabled {
 		return
 	}
@@ -110,7 +110,7 @@ func (nm *NotificationManager) checkAndNotify(ctx context.Context) {
 		}
 	}
 
-	// Prune old notification records (Requirement 3.7).
+	// Prune old notification records
 	cutoff := time.Now().Add(-nm.cfg.Core.Peer.NotificationCleanupAfter)
 	if err := nm.notifRepo.DeleteNotificationRecordsBefore(ctx, cutoff); err != nil {
 		slog.Warn("notification manager: failed to prune old notification records", "error", err)
@@ -118,19 +118,19 @@ func (nm *NotificationManager) checkAndNotify(ctx context.Context) {
 }
 
 // processPeerNotifications checks whether any notification intervals are due for the given peer
-// and sends emails accordingly, enforcing the at-most-once guarantee (Requirements 4.1–4.7).
+// and sends emails accordingly, enforcing the at-most-once guarantee
 func (nm *NotificationManager) processPeerNotifications(ctx context.Context, peer *domain.Peer) {
-	// Skip peers with no expiry (Requirement 4.5).
+	// Skip peers with no expiry
 	if peer.ExpiresAt == nil {
 		return
 	}
 
-	// Skip disabled peers (Requirement 4.4).
+	// Skip disabled peers
 	if peer.IsDisabled() {
 		return
 	}
 
-	// Skip peers with no linked user or no email (Requirement 4.3).
+	// Skip peers with no linked user or no email
 	if peer.UserIdentifier == "" {
 		slog.Debug("notification manager: skipping peer with no linked user",
 			"peer", peer.Identifier)
@@ -173,7 +173,7 @@ func (nm *NotificationManager) processPeerNotifications(ctx context.Context, pee
 			continue // too early — not yet due
 		}
 
-		// At-most-once guard: check if a record already exists for (peer, interval) (Requirement 4.2).
+		// At-most-once guard: check if a record already exists for (peer, interval).
 		if hasRecord(existingRecords, interval) {
 			continue
 		}
@@ -185,7 +185,7 @@ func (nm *NotificationManager) processPeerNotifications(ctx context.Context, pee
 			daysLeft = 0
 		}
 
-		// Send the notification email (Requirement 4.6).
+		// Send the notification email.
 		sendErr := nm.mailer.SendExpiryNotification(ctx, peer, user, daysLeft)
 		if sendErr != nil {
 			slog.Error("notification manager: failed to send expiry notification",
@@ -195,7 +195,7 @@ func (nm *NotificationManager) processPeerNotifications(ctx context.Context, pee
 		}
 
 		// Persist the record regardless of send outcome so that a broken SMTP
-		// server does not cause infinite retries every cycle (Requirement 6.1).
+		// server does not cause infinite retries every cycle.
 		rec := domain.PeerNotificationRecord{
 			PeerIdentifier:  peer.Identifier,
 			IntervalSeconds: int64(interval.Seconds()),

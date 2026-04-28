@@ -191,7 +191,7 @@ func (m Manager) sendPeerEmail(
 	return nil
 }
 
-// SendExpiryNotification sends a peer expiry warning email to the given user (Requirement 4.6).
+// SendExpiryNotification sends a peer expiry warning email to the given user
 func (m Manager) SendExpiryNotification(ctx context.Context, peer *domain.Peer, user *domain.User, daysLeft int) error {
 	expiresAt := *peer.ExpiresAt
 

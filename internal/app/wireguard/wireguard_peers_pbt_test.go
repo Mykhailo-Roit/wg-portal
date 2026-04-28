@@ -62,7 +62,6 @@ func buildPeer(pubKey string, createdAt time.Time, expiresAt *time.Time) *domain
 }
 
 // Feature: peer-rotation-interval, Property 1: interval=0 → ExpiresAt==nil
-// Validates: Requirements 1.2
 func TestProperty1_ZeroInterval_NoExpiresAt(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		// Generate a random creation time within a reasonable range
@@ -95,7 +94,6 @@ func TestProperty1_ZeroInterval_NoExpiresAt(t *testing.T) {
 }
 
 // Feature: peer-rotation-interval, Property 2: ExpiresAt ≈ now + interval
-// Validates: Requirements 1.3
 // Regression: ExpiresAt must be based on time.Now(), not peer.CreatedAt (which is zero before DB insert).
 func TestProperty2_PositiveInterval_SetsExpiresAt(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
@@ -181,7 +179,6 @@ func TestCreatePeer_ZeroCreatedAt_ExpiresAtBasedOnNow(t *testing.T) {
 }
 
 // Feature: peer-rotation-interval, Property 3: explicit ExpiresAt is never overwritten
-// Validates: Requirements 1.5
 func TestProperty3_ExplicitExpiresAt_NotOverwritten(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		// Generate a positive rotation interval
