@@ -12,6 +12,7 @@ import (
 	"github.com/h44z/wg-portal/internal"
 	"github.com/h44z/wg-portal/internal/config"
 	"github.com/h44z/wg-portal/internal/domain"
+	"github.com/h44z/wg-portal/internal/sanitize"
 )
 
 // LdapAuthenticator is an authenticator that uses LDAP for authentication.
@@ -146,17 +147,17 @@ func (l LdapAuthenticator) ParseUserInfo(raw map[string]any) (*domain.Authentica
 	department := internal.MapDefaultString(raw, l.cfg.FieldMap.Department, "")
 
 	if l.cfg.SanitizeUserData {
-		domain.LogSanitizationChange("ldap", l.cfg.ProviderName, "identifier", identifier,
+		sanitize.LogChange("ldap", l.cfg.ProviderName, "identifier", identifier,
 			func() string { return domain.SanitizeIdentifier(identifier, 256) }, &identifier)
-		domain.LogSanitizationChange("ldap", l.cfg.ProviderName, "email", email,
+		sanitize.LogChange("ldap", l.cfg.ProviderName, "email", email,
 			func() string { return domain.SanitizeEmail(email, 254) }, &email)
-		domain.LogSanitizationChange("ldap", l.cfg.ProviderName, "firstname", firstname,
+		sanitize.LogChange("ldap", l.cfg.ProviderName, "firstname", firstname,
 			func() string { return domain.SanitizeString(firstname, 128) }, &firstname)
-		domain.LogSanitizationChange("ldap", l.cfg.ProviderName, "lastname", lastname,
+		sanitize.LogChange("ldap", l.cfg.ProviderName, "lastname", lastname,
 			func() string { return domain.SanitizeString(lastname, 128) }, &lastname)
-		domain.LogSanitizationChange("ldap", l.cfg.ProviderName, "phone", phone,
+		sanitize.LogChange("ldap", l.cfg.ProviderName, "phone", phone,
 			func() string { return domain.SanitizePhone(phone, 50) }, &phone)
-		domain.LogSanitizationChange("ldap", l.cfg.ProviderName, "department", department,
+		sanitize.LogChange("ldap", l.cfg.ProviderName, "department", department,
 			func() string { return domain.SanitizeString(department, 128) }, &department)
 	}
 

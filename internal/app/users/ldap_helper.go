@@ -11,6 +11,7 @@ import (
 	"github.com/h44z/wg-portal/internal"
 	"github.com/h44z/wg-portal/internal/config"
 	"github.com/h44z/wg-portal/internal/domain"
+	sanitizeutil "github.com/h44z/wg-portal/internal/sanitize"
 )
 
 func convertRawLdapUser(
@@ -18,7 +19,7 @@ func convertRawLdapUser(
 	rawUser map[string]any,
 	fields *config.LdapFields,
 	adminGroupDN *ldap.DN,
-	sanitize bool,
+	sanitizeUserData bool,
 ) (*domain.User, error) {
 	now := time.Now()
 
@@ -34,18 +35,18 @@ func convertRawLdapUser(
 	phone := internal.MapDefaultString(rawUser, fields.Phone, "")
 	department := internal.MapDefaultString(rawUser, fields.Department, "")
 
-	if sanitize {
-		domain.LogSanitizationChange("ldap", providerName, "identifier", uid,
+	if sanitizeUserData {
+		sanitizeutil.LogChange("ldap", providerName, "identifier", uid,
 			func() string { return domain.SanitizeIdentifier(uid, 256) }, &uid)
-		domain.LogSanitizationChange("ldap", providerName, "email", email,
+		sanitizeutil.LogChange("ldap", providerName, "email", email,
 			func() string { return domain.SanitizeEmail(email, 254) }, &email)
-		domain.LogSanitizationChange("ldap", providerName, "firstname", firstname,
+		sanitizeutil.LogChange("ldap", providerName, "firstname", firstname,
 			func() string { return domain.SanitizeString(firstname, 128) }, &firstname)
-		domain.LogSanitizationChange("ldap", providerName, "lastname", lastname,
+		sanitizeutil.LogChange("ldap", providerName, "lastname", lastname,
 			func() string { return domain.SanitizeString(lastname, 128) }, &lastname)
-		domain.LogSanitizationChange("ldap", providerName, "phone", phone,
+		sanitizeutil.LogChange("ldap", providerName, "phone", phone,
 			func() string { return domain.SanitizePhone(phone, 50) }, &phone)
-		domain.LogSanitizationChange("ldap", providerName, "department", department,
+		sanitizeutil.LogChange("ldap", providerName, "department", department,
 			func() string { return domain.SanitizeString(department, 128) }, &department)
 	}
 

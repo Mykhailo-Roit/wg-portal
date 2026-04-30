@@ -1,56 +1,72 @@
 package domain
 
 import (
+	"net/mail"
 	"strings"
+	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 )
 
-// SanitizeString trims leading and trailing whitespace, strips all control characters
-// (runes with value < 0x20), and truncates the result to maxLen runes (rune-aware, not byte-aware).
-// If maxLen <= 0, returns "".
+var reservedUserIdentifiers = map[string]struct{}{
+	"all":                       {},
+	"new":                       {},
+	"id":                        {},
+	string(CtxSystemAdminId):    {},
+	string(CtxUnknownUserId):    {},
+	string(CtxSystemLdapSyncer): {},
+	string(CtxSystemWgImporter): {},
+	string(CtxSystemV1Migrator): {},
+	string(CtxSystemDBMigrator): {},
+}
+
+// SanitizeString normalizes to NFC, trims leading and trailing whitespace, strips Unicode
+// control and format characters, drops invalid UTF-8 bytes, and truncates the result to
+// maxLen runes. If maxLen <= 0, returns "".
 func SanitizeString(s string, maxLen int) string {
 	if maxLen <= 0 {
 		return ""
 	}
 
-	// Trim leading/trailing whitespace first
-	s = strings.TrimSpace(s)
+	s = norm.NFC.String(strings.TrimSpace(s))
 
-	// Strip all runes with value < 0x20 (control characters)
 	var b strings.Builder
 	b.Grow(len(s))
-	for _, r := range s {
-		if r >= 0x20 {
+	for len(s) > 0 {
+		r, size := utf8.DecodeRuneInString(s)
+		s = s[size:]
+		if r == utf8.RuneError && size == 1 {
+			continue
+		}
+		if !unicode.IsControl(r) && !unicode.Is(unicode.Cf, r) {
 			b.WriteRune(r)
 		}
 	}
 	s = b.String()
 
-	// Truncate to maxLen runes (rune-aware)
 	if utf8.RuneCountInString(s) > maxLen {
 		runes := []rune(s)
 		s = string(runes[:maxLen])
 	}
 
-	// Re-trim after truncation: truncation can expose a trailing space that was
-	// previously in the middle of the string (e.g. "A A" truncated to 2 → "A ").
-	s = strings.TrimSpace(s)
-
-	return s
+	return strings.TrimSpace(s)
 }
 
-// SanitizeEmail applies SanitizeString first, then returns "" if the original s contains
-// \r (U+000D) or \n (U+000A), or if the sanitized result contains no '@' character.
+// SanitizeEmail applies SanitizeString first, then returns "" if the original s
+// contains CR/LF or if the sanitized result is not a plain email address.
 func SanitizeEmail(s string, maxLen int) string {
-	// Check the original string for CR or LF before sanitization
 	if strings.ContainsRune(s, '\r') || strings.ContainsRune(s, '\n') {
 		return ""
 	}
 
 	sanitized := SanitizeString(s, maxLen)
 
-	// Return "" if the sanitized result contains no '@'
-	if !strings.ContainsRune(sanitized, '@') {
+	if sanitized == "" || strings.Count(sanitized, "@") != 1 {
+		return ""
+	}
+	addr, err := mail.ParseAddress(sanitized)
+	if err != nil || addr.Name != "" || addr.Address != sanitized {
 		return ""
 	}
 
@@ -92,13 +108,18 @@ func isAllowedPhoneRune(r rune) bool {
 }
 
 // SanitizeIdentifier applies SanitizeString first, then returns "" if the result equals
-// the reserved value "all" (case-sensitive, exact match).
+// a reserved user identifier (case-sensitive, exact match).
 func SanitizeIdentifier(s string, maxLen int) string {
 	sanitized := SanitizeString(s, maxLen)
 
-	if sanitized == "all" {
+	if IsReservedUserIdentifier(UserIdentifier(sanitized)) {
 		return ""
 	}
 
 	return sanitized
+}
+
+func IsReservedUserIdentifier(identifier UserIdentifier) bool {
+	_, reserved := reservedUserIdentifiers[string(identifier)]
+	return reserved
 }

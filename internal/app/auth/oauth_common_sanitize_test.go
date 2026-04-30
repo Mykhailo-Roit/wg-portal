@@ -128,6 +128,48 @@ func TestParseOauthUserInfo_SanitizeTrue_IdentifierAll(t *testing.T) {
 	assert.True(t, errors.Is(err, domain.ErrInvalidData), "expected ErrInvalidData when identifier is 'all'")
 }
 
+func TestParseOauthUserInfo_SanitizeTrue_DropsModifiedGroupBeforeAdminMatch(t *testing.T) {
+	mapping := makeOauthFieldMapping()
+	mapping.UserGroups = "groups"
+	adminMapping := &config.OauthAdminMapping{
+		AdminGroupRegex: "^wgportal-admins$",
+	}
+	raw := makeOauthRaw("user123", "user@example.com", "Alice", "Smith", "", "")
+	raw["groups"] = []any{"wgportal-\u200badmins"}
+
+	restore := testutil.CaptureWarnLogs(t)
+	info, err := parseOauthUserInfo(mapping, adminMapping, raw, true, "oidc", "test-provider")
+	records := restore()
+
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	assert.False(t, info.IsAdmin, "sanitization must not repair a modified group into an admin match")
+	assert.Empty(t, info.UserGroups)
+
+	rec, found := testutil.FindWarnWithField(records, "user_group")
+	assert.True(t, found, "expected WARN log entry with field=user_group")
+	if found {
+		assert.Equal(t, "oidc", rec["provider_type"])
+	}
+}
+
+func TestParseOauthUserInfo_SanitizeTrue_AllowsWhitespaceOnlyGroupTrim(t *testing.T) {
+	mapping := makeOauthFieldMapping()
+	mapping.UserGroups = "groups"
+	adminMapping := &config.OauthAdminMapping{
+		AdminGroupRegex: "^wgportal-admins$",
+	}
+	raw := makeOauthRaw("user123", "user@example.com", "Alice", "Smith", "", "")
+	raw["groups"] = []any{" wgportal-admins "}
+
+	info, err := parseOauthUserInfo(mapping, adminMapping, raw, true, "oidc", "test-provider")
+
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	assert.True(t, info.IsAdmin)
+	assert.Equal(t, []string{"wgportal-admins"}, info.UserGroups)
+}
+
 // ---------------------------------------------------------------------------
 // Property 6: Sanitization bypass when flag is false
 // ---------------------------------------------------------------------------

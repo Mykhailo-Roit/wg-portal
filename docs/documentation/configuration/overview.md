@@ -546,7 +546,7 @@ Some core authentication options are shared across all providers, while others a
 ### `sanitize_external_user_data`
 - **Default:** `true`
 - **Environment Variable:** `WG_PORTAL_AUTH_SANITIZE_EXTERNAL_USER_DATA`
-- **Description:** Controls whether user data received from LDAP, OIDC, and OAuth providers is sanitized before storage. Sanitization strips control characters, enforces field length limits, rejects email values that could cause header injection, and avoids log injection. See [External Identity Provider Data Sanitization](../usage/security.md#external-identity-provider-data-sanitization) for details.
+- **Description:** Controls whether user data received from LDAP, OIDC, and OAuth providers is sanitized before storage. Sanitization strips Unicode control/format characters, enforces field length limits, validates plain email values, rejects reserved user identifiers, and avoids log injection. See [External Identity Provider Data Sanitization](../usage/security.md#external-identity-provider-data-sanitization) for details.
 - **Important:** Set to `false` only if your identity provider is fully trusted and sanitization would cause unacceptable data loss.
 
 ---

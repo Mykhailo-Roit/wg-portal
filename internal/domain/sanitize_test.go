@@ -1,8 +1,10 @@
 package domain
 
 import (
+	"net/mail"
 	"strings"
 	"testing"
+	"unicode"
 	"unicode/utf8"
 
 	"pgregory.net/rapid"
@@ -93,6 +95,30 @@ func TestSanitizeString(t *testing.T) {
 			maxLen: -1,
 			want:   "",
 		},
+		{
+			name:   "DEL control removed",
+			input:  "hel\x7flo",
+			maxLen: 64,
+			want:   "hello",
+		},
+		{
+			name:   "zero-width format character removed",
+			input:  "ali\u200bce",
+			maxLen: 64,
+			want:   "alice",
+		},
+		{
+			name:   "invalid UTF-8 byte removed",
+			input:  "a\xffb",
+			maxLen: 64,
+			want:   "ab",
+		},
+		{
+			name:   "unicode normalized to NFC",
+			input:  "e\u0301",
+			maxLen: 64,
+			want:   "é",
+		},
 	}
 
 	for _, tc := range tests {
@@ -151,6 +177,24 @@ func TestSanitizeEmail(t *testing.T) {
 		{
 			name:   "empty input returns empty",
 			input:  "",
+			maxLen: 254,
+			want:   "",
+		},
+		{
+			name:   "display-name address rejected",
+			input:  "User <user@example.com>",
+			maxLen: 254,
+			want:   "",
+		},
+		{
+			name:   "multiple at signs rejected",
+			input:  "user@@example.com",
+			maxLen: 254,
+			want:   "",
+		},
+		{
+			name:   "invalid address rejected",
+			input:  "user@",
 			maxLen: 254,
 			want:   "",
 		},
@@ -241,6 +285,36 @@ func TestSanitizeIdentifier(t *testing.T) {
 			want:   "",
 		},
 		{
+			name:   "reserved value new returns empty",
+			input:  "new",
+			maxLen: 256,
+			want:   "",
+		},
+		{
+			name:   "reserved value id returns empty",
+			input:  "id",
+			maxLen: 256,
+			want:   "",
+		},
+		{
+			name:   "system admin identifier returns empty",
+			input:  string(CtxSystemAdminId),
+			maxLen: 256,
+			want:   "",
+		},
+		{
+			name:   "unknown user identifier returns empty",
+			input:  string(CtxUnknownUserId),
+			maxLen: 256,
+			want:   "",
+		},
+		{
+			name:   "LDAP syncer identifier returns empty",
+			input:  string(CtxSystemLdapSyncer),
+			maxLen: 256,
+			want:   "",
+		},
+		{
 			name:   "ALL uppercase passes through (case-sensitive)",
 			input:  "ALL",
 			maxLen: 256,
@@ -297,11 +371,15 @@ func TestPropertySanitizeStringOutputInvariants(t *testing.T) {
 		maxLen := rapid.IntRange(0, 512).Draw(t, "maxLen")
 		result := SanitizeString(s, maxLen)
 
-		// No rune in result has value < 0x20
+		// No control or format runes in result
 		for _, r := range result {
-			if r < 0x20 {
-				t.Fatalf("result %q contains control character %U", result, r)
+			if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+				t.Fatalf("result %q contains unsafe character %U", result, r)
 			}
+		}
+
+		if !utf8.ValidString(result) {
+			t.Fatalf("result %q is not valid UTF-8", result)
 		}
 
 		// No leading or trailing whitespace
@@ -348,7 +426,15 @@ func TestPropertySanitizeEmailRejectionRules(t *testing.T) {
 		maxLen := rapid.IntRange(1, 512).Draw(t, "maxLen")
 		result := SanitizeEmail(s, maxLen)
 
-		if strings.ContainsAny(s, "\r\n") || !strings.Contains(SanitizeString(s, maxLen), "@") {
+		sanitized := SanitizeString(s, maxLen)
+		addr, parseErr := mail.ParseAddress(sanitized)
+		reject := strings.ContainsAny(s, "\r\n") ||
+			sanitized == "" ||
+			strings.Count(sanitized, "@") != 1 ||
+			parseErr != nil ||
+			addr.Name != "" ||
+			addr.Address != sanitized
+		if reject {
 			if result != "" {
 				t.Fatalf("SanitizeEmail(%q, %d) = %q; expected empty string (contains CR/LF or no @)",
 					s, maxLen, result)
@@ -390,20 +476,21 @@ func TestPropertySanitizePhoneAllowedChars(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Property 5: SanitizeIdentifier rejects "all"
+// Property 5: SanitizeIdentifier rejects reserved identifiers
 // ---------------------------------------------------------------------------
 
-// Feature: external-identity-sanitization, Property 5: SanitizeIdentifier rejects the reserved value "all"
-func TestPropertySanitizeIdentifierRejectsAll(t *testing.T) {
+// Feature: external-identity-sanitization, Property 5: SanitizeIdentifier rejects reserved values
+func TestPropertySanitizeIdentifierRejectsReservedValues(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		s := rapid.String().Draw(t, "s")
 		maxLen := rapid.IntRange(1, 512).Draw(t, "maxLen")
 		result := SanitizeIdentifier(s, maxLen)
 		sanitized := SanitizeString(s, maxLen)
 
-		if sanitized == "all" {
+		_, reserved := reservedUserIdentifiers[sanitized]
+		if reserved {
 			if result != "" {
-				t.Fatalf("SanitizeIdentifier(%q, %d) = %q; expected empty string when sanitized == \"all\"",
+				t.Fatalf("SanitizeIdentifier(%q, %d) = %q; expected empty string when sanitized is reserved",
 					s, maxLen, result)
 			}
 		} else {

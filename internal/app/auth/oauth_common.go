@@ -7,6 +7,7 @@ import (
 	"github.com/h44z/wg-portal/internal"
 	"github.com/h44z/wg-portal/internal/config"
 	"github.com/h44z/wg-portal/internal/domain"
+	"github.com/h44z/wg-portal/internal/sanitize"
 )
 
 // parseOauthUserInfo parses the raw user info from the oauth provider and maps it to the internal user info struct
@@ -14,13 +15,16 @@ func parseOauthUserInfo(
 	mapping config.OauthFields,
 	adminMapping *config.OauthAdminMapping,
 	raw map[string]any,
-	sanitize bool,
+	sanitizeUserData bool,
 	providerType string,
 	providerName string,
 ) (*domain.AuthenticatorUserInfo, error) {
 	var isAdmin bool
 	var adminInfoAvailable bool
 	userGroups := internal.MapDefaultStringSlice(raw, mapping.UserGroups, nil)
+	if sanitizeUserData {
+		userGroups = sanitizeOauthGroups(providerType, providerName, userGroups)
+	}
 
 	// first try to match the is_admin field against the given regex
 	if mapping.IsAdmin != "" {
@@ -50,18 +54,18 @@ func parseOauthUserInfo(
 	phone := internal.MapDefaultString(raw, mapping.Phone, "")
 	department := internal.MapDefaultString(raw, mapping.Department, "")
 
-	if sanitize {
-		domain.LogSanitizationChange(providerType, providerName, "identifier", identifier,
+	if sanitizeUserData {
+		sanitize.LogChange(providerType, providerName, "identifier", identifier,
 			func() string { return domain.SanitizeIdentifier(identifier, 256) }, &identifier)
-		domain.LogSanitizationChange(providerType, providerName, "email", email,
+		sanitize.LogChange(providerType, providerName, "email", email,
 			func() string { return domain.SanitizeEmail(email, 254) }, &email)
-		domain.LogSanitizationChange(providerType, providerName, "firstname", firstname,
+		sanitize.LogChange(providerType, providerName, "firstname", firstname,
 			func() string { return domain.SanitizeString(firstname, 128) }, &firstname)
-		domain.LogSanitizationChange(providerType, providerName, "lastname", lastname,
+		sanitize.LogChange(providerType, providerName, "lastname", lastname,
 			func() string { return domain.SanitizeString(lastname, 128) }, &lastname)
-		domain.LogSanitizationChange(providerType, providerName, "phone", phone,
+		sanitize.LogChange(providerType, providerName, "phone", phone,
 			func() string { return domain.SanitizePhone(phone, 50) }, &phone)
-		domain.LogSanitizationChange(providerType, providerName, "department", department,
+		sanitize.LogChange(providerType, providerName, "department", department,
 			func() string { return domain.SanitizeString(department, 128) }, &department)
 	}
 
@@ -82,6 +86,28 @@ func parseOauthUserInfo(
 	}
 
 	return userInfo, nil
+}
+
+func sanitizeOauthGroups(providerType, providerName string, rawGroups []string) []string {
+	if len(rawGroups) == 0 {
+		return rawGroups
+	}
+
+	groups := make([]string, 0, len(rawGroups))
+	for _, rawGroup := range rawGroups {
+		sanitized := rawGroup
+		sanitize.LogChange(providerType, providerName, "user_group", rawGroup,
+			func() string { return domain.SanitizeString(rawGroup, 256) }, &sanitized)
+		if sanitized == "" {
+			continue
+		}
+		if sanitized != strings.TrimSpace(rawGroup) {
+			continue
+		}
+		groups = append(groups, sanitized)
+	}
+
+	return groups
 }
 
 // getOauthFieldMapping returns the default field mapping for the oauth provider

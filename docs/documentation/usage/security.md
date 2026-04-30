@@ -12,11 +12,12 @@ To enable encryption, set the [`encryption_passphrase`](../configuration/overvie
 
 When users authenticate via LDAP, OIDC, or OAuth, WireGuard Portal sanitizes the field values received from the provider before storing them. This protects against several classes of attack that a compromised or misconfigured identity provider could introduce:
 
-- **Unsafe control characters** — control characters and null bytes are stripped from name and department fields before they reach the Vue.js UI or email templates.
-- **Email header injection** — carriage return and line feed characters in email fields are rejected entirely.
-- **Log injection** — control characters are stripped from all fields before values are written to logs.
+- **Unsafe control characters** — Unicode control and format characters, null bytes, and invalid UTF-8 bytes are stripped from external profile fields before they reach the Vue.js UI or email templates.
+- **Email header injection** — carriage return and line feed characters in email fields are rejected entirely, and email fields must parse as plain email addresses.
+- **Log injection** — unsafe control and format characters are stripped from all external profile fields and from sanitization log context.
 - **Denial of service via oversized fields** — field lengths are capped (e.g., 256 runes for identifiers, 254 characters for email addresses).
-- **Reserved identifier collision** — the value `"all"` is rejected as a user identifier because it collides with the `/users/all` HTTP route.
+- **Reserved identifier collision** — reserved user identifiers such as `"all"`, `"new"`, `"id"`, and internal system user identifiers are rejected.
+- **Unsafe authorization groups** — OIDC/OAuth group claims are sanitized before group-based checks; groups changed by control/format stripping or truncation are dropped rather than repaired into allowed/admin matches.
 
 Sanitization is **enabled by default**. It can be disabled via the [`sanitize_external_user_data`](../configuration/overview.md#sanitize_external_user_data) configuration key.
 
