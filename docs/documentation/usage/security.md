@@ -8,6 +8,24 @@ To enable encryption, set the [`encryption_passphrase`](../configuration/overvie
 > :warning: Important: Once encryption is enabled, it cannot be disabled, and the passphrase cannot be changed! 
 > Only new or updated records will be encrypted; existing data remains in plaintext until it’s next modified.
 
+## External Identity Provider Data Sanitization
+
+When users authenticate via LDAP, OIDC, or OAuth, WireGuard Portal sanitizes the field values received from the provider before storing them. This protects against several classes of attack that a compromised or misconfigured identity provider could introduce:
+
+- **Unsafe control characters** — control characters and null bytes are stripped from name and department fields before they reach the Vue.js UI or email templates.
+- **Email header injection** — carriage return and line feed characters in email fields are rejected entirely.
+- **Log injection** — control characters are stripped from all fields before values are written to logs.
+- **Denial of service via oversized fields** — field lengths are capped (e.g., 256 runes for identifiers, 254 characters for email addresses).
+- **Reserved identifier collision** — the value `"all"` is rejected as a user identifier because it collides with the `/users/all` HTTP route.
+
+Sanitization is **enabled by default**. It can be disabled via the [`sanitize_external_user_data`](../configuration/overview.md#sanitize_external_user_data) configuration key.
+
+> :warning: Only disable sanitization if your identity provider is fully under your control and you have confirmed that sanitization causes unacceptable data loss (for example, legitimate usernames that contain characters the sanitizer strips).
+
+When sanitization modifies or clears a field value, a `WARN` log entry is emitted with the provider name, provider type, and field name — but never the raw or sanitized value, to avoid leaking sensitive data into logs. This makes it straightforward to detect and investigate potentially malicious or misconfigured providers.
+
+---
+
 ## UI and API Access
 
 WireGuard Portal provides a web UI and a REST API for user interaction. It is important to secure these interfaces to prevent unauthorized access and data breaches.

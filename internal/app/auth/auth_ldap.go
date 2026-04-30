@@ -138,13 +138,39 @@ func (l LdapAuthenticator) ParseUserInfo(raw map[string]any) (*domain.Authentica
 		}
 	}
 
+	identifier := internal.MapDefaultString(raw, l.cfg.FieldMap.UserIdentifier, "")
+	email := internal.MapDefaultString(raw, l.cfg.FieldMap.Email, "")
+	firstname := internal.MapDefaultString(raw, l.cfg.FieldMap.Firstname, "")
+	lastname := internal.MapDefaultString(raw, l.cfg.FieldMap.Lastname, "")
+	phone := internal.MapDefaultString(raw, l.cfg.FieldMap.Phone, "")
+	department := internal.MapDefaultString(raw, l.cfg.FieldMap.Department, "")
+
+	if l.cfg.SanitizeUserData {
+		domain.LogSanitizationChange("ldap", l.cfg.ProviderName, "identifier", identifier,
+			func() string { return domain.SanitizeIdentifier(identifier, 256) }, &identifier)
+		domain.LogSanitizationChange("ldap", l.cfg.ProviderName, "email", email,
+			func() string { return domain.SanitizeEmail(email, 254) }, &email)
+		domain.LogSanitizationChange("ldap", l.cfg.ProviderName, "firstname", firstname,
+			func() string { return domain.SanitizeString(firstname, 128) }, &firstname)
+		domain.LogSanitizationChange("ldap", l.cfg.ProviderName, "lastname", lastname,
+			func() string { return domain.SanitizeString(lastname, 128) }, &lastname)
+		domain.LogSanitizationChange("ldap", l.cfg.ProviderName, "phone", phone,
+			func() string { return domain.SanitizePhone(phone, 50) }, &phone)
+		domain.LogSanitizationChange("ldap", l.cfg.ProviderName, "department", department,
+			func() string { return domain.SanitizeString(department, 128) }, &department)
+	}
+
+	if identifier == "" {
+		return nil, fmt.Errorf("empty user identifier: %w", domain.ErrInvalidData)
+	}
+
 	userInfo := &domain.AuthenticatorUserInfo{
-		Identifier:         domain.UserIdentifier(internal.MapDefaultString(raw, l.cfg.FieldMap.UserIdentifier, "")),
-		Email:              internal.MapDefaultString(raw, l.cfg.FieldMap.Email, ""),
-		Firstname:          internal.MapDefaultString(raw, l.cfg.FieldMap.Firstname, ""),
-		Lastname:           internal.MapDefaultString(raw, l.cfg.FieldMap.Lastname, ""),
-		Phone:              internal.MapDefaultString(raw, l.cfg.FieldMap.Phone, ""),
-		Department:         internal.MapDefaultString(raw, l.cfg.FieldMap.Department, ""),
+		Identifier:         domain.UserIdentifier(identifier),
+		Email:              email,
+		Firstname:          firstname,
+		Lastname:           lastname,
+		Phone:              phone,
+		Department:         department,
 		IsAdmin:            isAdmin,
 		AdminInfoAvailable: adminInfoAvailable,
 	}

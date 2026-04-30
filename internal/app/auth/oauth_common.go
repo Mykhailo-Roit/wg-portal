@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/h44z/wg-portal/internal"
@@ -13,6 +14,9 @@ func parseOauthUserInfo(
 	mapping config.OauthFields,
 	adminMapping *config.OauthAdminMapping,
 	raw map[string]any,
+	sanitize bool,
+	providerType string,
+	providerName string,
 ) (*domain.AuthenticatorUserInfo, error) {
 	var isAdmin bool
 	var adminInfoAvailable bool
@@ -39,14 +43,40 @@ func parseOauthUserInfo(
 		}
 	}
 
+	identifier := internal.MapDefaultString(raw, mapping.UserIdentifier, "")
+	email := internal.MapDefaultString(raw, mapping.Email, "")
+	firstname := internal.MapDefaultString(raw, mapping.Firstname, "")
+	lastname := internal.MapDefaultString(raw, mapping.Lastname, "")
+	phone := internal.MapDefaultString(raw, mapping.Phone, "")
+	department := internal.MapDefaultString(raw, mapping.Department, "")
+
+	if sanitize {
+		domain.LogSanitizationChange(providerType, providerName, "identifier", identifier,
+			func() string { return domain.SanitizeIdentifier(identifier, 256) }, &identifier)
+		domain.LogSanitizationChange(providerType, providerName, "email", email,
+			func() string { return domain.SanitizeEmail(email, 254) }, &email)
+		domain.LogSanitizationChange(providerType, providerName, "firstname", firstname,
+			func() string { return domain.SanitizeString(firstname, 128) }, &firstname)
+		domain.LogSanitizationChange(providerType, providerName, "lastname", lastname,
+			func() string { return domain.SanitizeString(lastname, 128) }, &lastname)
+		domain.LogSanitizationChange(providerType, providerName, "phone", phone,
+			func() string { return domain.SanitizePhone(phone, 50) }, &phone)
+		domain.LogSanitizationChange(providerType, providerName, "department", department,
+			func() string { return domain.SanitizeString(department, 128) }, &department)
+	}
+
+	if identifier == "" {
+		return nil, fmt.Errorf("empty user identifier: %w", domain.ErrInvalidData)
+	}
+
 	userInfo := &domain.AuthenticatorUserInfo{
-		Identifier:         domain.UserIdentifier(internal.MapDefaultString(raw, mapping.UserIdentifier, "")),
-		Email:              internal.MapDefaultString(raw, mapping.Email, ""),
+		Identifier:         domain.UserIdentifier(identifier),
+		Email:              email,
 		UserGroups:         userGroups,
-		Firstname:          internal.MapDefaultString(raw, mapping.Firstname, ""),
-		Lastname:           internal.MapDefaultString(raw, mapping.Lastname, ""),
-		Phone:              internal.MapDefaultString(raw, mapping.Phone, ""),
-		Department:         internal.MapDefaultString(raw, mapping.Department, ""),
+		Firstname:          firstname,
+		Lastname:           lastname,
+		Phone:              phone,
+		Department:         department,
 		IsAdmin:            isAdmin,
 		AdminInfoAvailable: adminInfoAvailable,
 	}
