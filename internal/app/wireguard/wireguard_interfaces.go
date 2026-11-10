@@ -307,9 +307,19 @@ func (m Manager) RestoreInterfaceState(
 		physicalPeers, _ := controller.GetPeers(ctx, iface.Identifier)
 		for _, physicalPeer := range physicalPeers {
 			isWgPortalPeer := false
-			for _, peer := range peers {
-				if peer.Identifier == domain.PeerIdentifier(physicalPeer.PublicKey) {
+			for i := range peers {
+				if peers[i].Identifier == domain.PeerIdentifier(physicalPeer.PublicKey) {
 					isWgPortalPeer = true
+
+					// Sync IsDynamic flag if it was changed on the backend
+					physConverted := domain.ConvertPhysicalPeer(&physicalPeer)
+					if peers[i].IsDynamic != physConverted.IsDynamic {
+						peers[i].IsDynamic = physConverted.IsDynamic
+						_ = m.db.SavePeer(ctx, peers[i].Identifier, func(p *domain.Peer) (*domain.Peer, error) {
+							p.IsDynamic = physConverted.IsDynamic
+							return p, nil
+						})
+					}
 					break
 				}
 			}
@@ -365,12 +375,10 @@ func (m Manager) PrepareInterface(ctx context.Context) (*domain.Interface, error
 	}
 
 	freshInterface := &domain.Interface{
-		BaseModel: domain.BaseModel{
-			CreatedBy: string(currentUser.Id),
-			UpdatedBy: string(currentUser.Id),
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		},
+		CreatedBy:                  string(currentUser.Id),
+		UpdatedBy:                  string(currentUser.Id),
+		CreatedAt:                  time.Now(),
+		UpdatedAt:                  time.Now(),
 		Identifier:                 id,
 		KeyPair:                    kp,
 		ListenPort:                 port,
@@ -893,16 +901,7 @@ func (m Manager) importInterface(
 		}
 	}
 
-	// try to predict the interface type based on the number of peers
-	switch len(peers) {
-	case 0:
-		iface.Type = domain.InterfaceTypeAny // no peers means this is an unknown interface
-	case 1:
-		iface.Type = domain.InterfaceTypeClient // one peer means this is a client interface
-	default: // multiple peers means this is a server interface
-
-		iface.Type = domain.InterfaceTypeServer
-	}
+	iface.Type = inferImportedInterfaceType(iface, peers)
 
 	existingInterface, err := m.db.GetInterface(ctx, iface.Identifier)
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
@@ -928,6 +927,20 @@ func (m Manager) importInterface(
 	}
 
 	return nil
+}
+
+func inferImportedInterfaceType(iface *domain.Interface, peers []domain.PhysicalPeer) domain.InterfaceType {
+	switch len(peers) {
+	case 0:
+		return domain.InterfaceTypeAny // no peers means this is an unknown interface
+	case 1:
+		if iface.ListenPort > 0 {
+			return domain.InterfaceTypeServer // a listening interface with one peer is commonly a site-to-site server
+		}
+		return domain.InterfaceTypeClient
+	default: // multiple peers means this is a server interface
+		return domain.InterfaceTypeServer
+	}
 }
 
 // extractPfsenseDefaultsFromPeers extracts common endpoint and DNS information from peers

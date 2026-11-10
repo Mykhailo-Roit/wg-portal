@@ -109,6 +109,11 @@ func (m Manager) updateLdapUsers(
 	for _, rawUser := range rawUsers {
 		user, err := convertRawLdapUser(provider.ProviderName, rawUser, fields, adminGroupDN)
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			if errors.Is(err, domain.ErrInvalidData) {
+				slog.Warn("skipping LDAP user with invalid data after sanitization",
+					"raw-dn", rawUser["dn"], "error", err)
+				continue
+			}
 			return fmt.Errorf("failed to convert LDAP data for %v: %w", rawUser["dn"], err)
 		}
 
@@ -188,6 +193,42 @@ func (m Manager) disableMissingLdapUsers(
 	rawUsers []internal.RawLdapUser,
 	fields *config.LdapFields,
 ) error {
+	// Collect the identifiers the directory actually returned. A hard LDAP
+	// failure is already handled by the caller, but a search that *succeeds*
+	// and yields nothing usable is indistinguishable here from "every user was
+	// removed from the directory". In practice that means a wrong base DN, a
+	// sync_filter that no longer matches, a replica that is up but not yet
+	// populated, a field map pointing at an attribute the server does not
+	// return, or a bind account that has lost read access to the user subtree.
+	// LDAP offers nothing to tell those apart: a search that matches nobody and
+	// one the client is not allowed to answer both come back as success with
+	// zero entries, and a directory server may reply that way for a base DN
+	// that does not exist rather than disclose it to an unprivileged client.
+	//
+	// Acting on it disables every LDAP-sourced user at once, and through
+	// TopicUserDisabled that removes each of their peers from the WireGuard
+	// device rather than only flagging them. The search succeeded, so no error
+	// is logged, and every message on this path is Debug: at the default log
+	// level the whole thing is silent. It also repeats every sync interval.
+	// Refuse instead. The cost is that a directory intentionally emptied of all
+	// users disables nobody; leaving a single account in scope restores the
+	// normal behaviour for everyone else.
+	ldapUserIds := make(map[domain.UserIdentifier]struct{}, len(rawUsers))
+	for _, rawUser := range rawUsers {
+		if userId := ldapUserIdentifier(rawUser, fields.UserIdentifier); userId != "" {
+			ldapUserIds[userId] = struct{}{}
+		}
+	}
+	if len(ldapUserIds) == 0 {
+		slog.Error("refusing to disable missing LDAP users: directory returned no usable user identifiers",
+			"provider", providerName,
+			"raw-entries", len(rawUsers),
+			"identifier-field", fields.UserIdentifier,
+			"hint", "check base_dn, sync_filter and the bind account's read permissions; "+
+				"if the directory is intentionally empty, keep one account matching sync_filter")
+		return nil
+	}
+
 	allUsers, err := m.users.GetAllUsers(ctx)
 	if err != nil {
 		return err
@@ -210,20 +251,14 @@ func (m Manager) disableMissingLdapUsers(
 			continue // skip sync for this user
 		}
 
-		existsInLDAP := false
-		for _, rawUser := range rawUsers {
-			userId := domain.UserIdentifier(internal.MapDefaultString(rawUser, fields.UserIdentifier, ""))
-			if user.Identifier == userId {
-				existsInLDAP = true
-				break
-			}
-		}
-
-		if existsInLDAP {
+		if _, existsInLDAP := ldapUserIds[user.Identifier]; existsInLDAP {
 			continue
 		}
 
-		slog.Debug("user is missing in ldap provider, disabling", "user", user.Identifier, "provider", providerName)
+		// Warn, not Debug: this removes the user's peers from the device, and at
+		// the default log level a Debug line would make a mass disable silent.
+		slog.Warn("user is missing in ldap provider, disabling",
+			"user", user.Identifier, "provider", providerName)
 
 		now := time.Now()
 		user.Disabled = &now
@@ -258,44 +293,78 @@ func (m Manager) updateInterfaceLdapFilters(
 
 		// Combined filter: user must match the provider's base SyncFilter AND the interface's LdapGroupFilter
 		combinedFilter := fmt.Sprintf("(&(%s)(%s))", provider.SyncFilter, groupFilter)
-		
+
 		rawUsers, err := internal.LdapFindAllUsers(conn, provider.BaseDN, combinedFilter, &provider.FieldMap)
 		if err != nil {
-			slog.Error("failed to find users for interface filter", 
-				"interface", ifaceId, 
-				"provider", provider.ProviderName, 
+			slog.Error("failed to find users for interface filter",
+				"interface", ifaceId,
+				"provider", provider.ProviderName,
 				"error", err)
 			continue
 		}
 
 		matchedUserIds := make([]domain.UserIdentifier, 0, len(rawUsers))
 		for _, rawUser := range rawUsers {
-			userId := domain.UserIdentifier(internal.MapDefaultString(rawUser, provider.FieldMap.UserIdentifier, ""))
+			userId := ldapUserIdentifier(rawUser, provider.FieldMap.UserIdentifier)
 			if userId != "" {
 				matchedUserIds = append(matchedUserIds, userId)
 			}
 		}
 
-		// Save the interface
-		err = m.interfaces.SaveInterface(ctx, ifaceId, func(i *domain.Interface) (*domain.Interface, error) {
-			if i.LdapAllowedUsers == nil {
-				i.LdapAllowedUsers = make(map[string][]domain.UserIdentifier)
-			}
-			i.LdapAllowedUsers[provider.ProviderName] = matchedUserIds
-			return i, nil
-		})
-		if err != nil {
-			slog.Error("failed to save interface ldap allowed users", 
-				"interface", ifaceId, 
-				"provider", provider.ProviderName, 
-				"error", err)
-		} else {
-			slog.Debug("updated interface ldap allowed users", 
-				"interface", ifaceId, 
-				"provider", provider.ProviderName, 
-				"matched_count", len(matchedUserIds))
-		}
+		m.applyInterfaceLdapFilter(ctx, ifaceId, provider.ProviderName, matchedUserIds)
 	}
 
 	return nil
+}
+
+// applyInterfaceLdapFilter stores the users an LDAP filter matched onto an
+// existing interface.
+//
+// It deliberately does not create the interface. SaveInterface would, which is
+// wrong twice over: an interface_filter entry is a statement about who may use
+// an interface, not a reason to bring one into existence, and the row it
+// creates has no backend. It also races the startup importer, which snapshots
+// the interface list before its device round-trips and then fails with
+// "interface already exists" once it finds the row.
+func (m Manager) applyInterfaceLdapFilter(
+	ctx context.Context,
+	ifaceId domain.InterfaceIdentifier,
+	providerName string,
+	matchedUserIds []domain.UserIdentifier,
+) {
+	if _, err := m.interfaces.GetInterface(ctx, ifaceId); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			slog.Warn("skipping interface filter for unknown interface",
+				"interface", ifaceId, "provider", providerName)
+		} else {
+			slog.Error("failed to look up interface for ldap filter",
+				"interface", ifaceId, "provider", providerName, "error", err)
+		}
+		return
+	}
+
+	err := m.interfaces.SaveInterface(ctx, ifaceId, func(i *domain.Interface) (*domain.Interface, error) {
+		if i.LdapAllowedUsers == nil {
+			i.LdapAllowedUsers = make(map[string][]domain.UserIdentifier)
+		}
+		i.LdapAllowedUsers[providerName] = matchedUserIds
+		return i, nil
+	})
+	if err != nil {
+		slog.Error("failed to save interface ldap allowed users",
+			"interface", ifaceId, "provider", providerName, "error", err)
+		return
+	}
+
+	slog.Debug("updated interface ldap allowed users",
+		"interface", ifaceId, "provider", providerName, "matched_count", len(matchedUserIds))
+}
+
+func ldapUserIdentifier(rawUser map[string]any, field string) domain.UserIdentifier {
+	identifier := internal.MapDefaultString(rawUser, field, "")
+	identifier = domain.SanitizeIdentifier(identifier, 256)
+	if identifier == "" {
+		return ""
+	}
+	return domain.UserIdentifier(identifier)
 }

@@ -31,6 +31,8 @@ type UserManager interface {
 	RegisterUser(ctx context.Context, user *domain.User) error
 	// UpdateUserInternal updates an existing user in the database.
 	UpdateUserInternal(ctx context.Context, user *domain.User) (*domain.User, error)
+	// IsDefaultPasswordInUse checks if the default admin password is still in use.
+	IsDefaultPasswordInUse(ctx context.Context) bool
 }
 
 type EventBus interface {
@@ -45,6 +47,11 @@ type AuthenticatorType string
 const (
 	AuthenticatorTypeOAuth AuthenticatorType = "oauth"
 	AuthenticatorTypeOidc  AuthenticatorType = "oidc"
+)
+
+const (
+	pkceMethodS256  = "S256"  // SHA-256 hashing
+	pkceMethodPlain = "plain" // plain text
 )
 
 // AuthenticatorOauth is the interface for all OAuth authenticators.
@@ -70,6 +77,10 @@ type AuthenticatorOauth interface {
 	GetAllowedUserGroups() []string
 	// GetLogoutUrl returns an IdP logout URL if supported by the provider.
 	GetLogoutUrl(idTokenHint, postLogoutRedirectUri string) (string, bool)
+	// PKCEAuthCodeOptions returns PKCE options for the authorization request and the verifier for the token exchange.
+	PKCEAuthCodeOptions() ([]oauth2.AuthCodeOption, string)
+	// PKCETokenOptions returns PKCE options for the token exchange.
+	PKCETokenOptions(verifier string) []oauth2.AuthCodeOption
 }
 
 // AuthenticatorLdap is the interface for all LDAP authenticators.
@@ -124,6 +135,11 @@ func NewAuthenticator(cfg *config.Auth, extUrl, basePath string, bus EventBus, u
 	a.callbackUrl = parsedExtUrl
 
 	return a, nil
+}
+
+// IsDefaultPasswordInUse checks if the default admin password is still in use.
+func (a *Authenticator) IsDefaultPasswordInUse(ctx context.Context) bool {
+	return a.users.IsDefaultPasswordInUse(ctx)
 }
 
 // StartBackgroundJobs starts the background jobs for the authenticator.
@@ -294,21 +310,27 @@ func (a *Authenticator) GetExternalLoginProviders(_ context.Context) []domain.Lo
 
 // IsUserValid checks if a user is valid and not locked or disabled.
 func (a *Authenticator) IsUserValid(ctx context.Context, id domain.UserIdentifier) bool {
+	_, valid := a.GetValidUser(ctx, id)
+	return valid
+}
+
+// GetValidUser returns the current user if the account exists and is not locked or disabled.
+func (a *Authenticator) GetValidUser(ctx context.Context, id domain.UserIdentifier) (*domain.User, bool) {
 	ctx = domain.SetUserInfo(ctx, domain.SystemAdminContextUserInfo()) // switch to admin user context
 	user, err := a.users.GetUser(ctx, id)
-	if err != nil {
-		return false
+	if err != nil || user == nil {
+		return nil, false
 	}
 
 	if user.IsDisabled() {
-		return false
+		return nil, false
 	}
 
 	if user.IsLocked() {
-		return false
+		return nil, false
 	}
 
-	return true
+	return user, true
 }
 
 // region password authentication
@@ -448,30 +470,34 @@ func (a *Authenticator) passwordAuthentication(
 
 // OauthLoginStep1 starts the oauth authentication flow by returning the authentication URL, state and nonce.
 func (a *Authenticator) OauthLoginStep1(_ context.Context, providerId string) (
-	authCodeUrl, state, nonce string,
+	authCodeUrl, state, nonce, codeVerifier string,
 	err error,
 ) {
 	oauthProvider, ok := a.oauthAuthenticators[providerId]
 	if !ok {
-		return "", "", "", fmt.Errorf("missing oauth provider %s", providerId)
+		return "", "", "", "", fmt.Errorf("missing oauth provider %s", providerId)
 	}
 
 	// Prepare authentication flow, set state cookies
 	state, err = a.randString(16)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to generate state: %w", err)
+		return "", "", "", "", fmt.Errorf("failed to generate state: %w", err)
 	}
+
+	// Generate PKCE code verifier and challenge if enabled. Otherwise, options will be empty.
+	authCodeOptions, codeVerifier := oauthProvider.PKCEAuthCodeOptions()
 
 	switch oauthProvider.GetType() {
 	case AuthenticatorTypeOAuth:
-		authCodeUrl = oauthProvider.AuthCodeURL(state)
+		authCodeUrl = oauthProvider.AuthCodeURL(state, authCodeOptions...)
 	case AuthenticatorTypeOidc:
 		nonce, err = a.randString(16)
 		if err != nil {
-			return "", "", "", fmt.Errorf("failed to generate nonce: %w", err)
+			return "", "", "", "", fmt.Errorf("failed to generate nonce: %w", err)
 		}
 
-		authCodeUrl = oauthProvider.AuthCodeURL(state, oidc.Nonce(nonce))
+		authCodeOptions = append(authCodeOptions, oidc.Nonce(nonce))
+		authCodeUrl = oauthProvider.AuthCodeURL(state, authCodeOptions...)
 	}
 
 	return
@@ -531,13 +557,16 @@ func isAnyAllowedUserGroup(userGroups, allowedUserGroups []string) bool {
 
 // OauthLoginStep2 finishes the oauth authentication flow by exchanging the code for an access token and
 // fetching the user information.
-func (a *Authenticator) OauthLoginStep2(ctx context.Context, providerId, nonce, code string) (*domain.User, string, error) {
+func (a *Authenticator) OauthLoginStep2(
+	ctx context.Context,
+	providerId, nonce, code, codeVerifier string,
+) (*domain.User, string, error) {
 	oauthProvider, ok := a.oauthAuthenticators[providerId]
 	if !ok {
 		return nil, "", fmt.Errorf("missing oauth provider %s", providerId)
 	}
 
-	oauth2Token, err := oauthProvider.Exchange(ctx, code)
+	oauth2Token, err := oauthProvider.Exchange(ctx, code, oauthProvider.PKCETokenOptions(codeVerifier)...)
 	if err != nil {
 		return nil, "", fmt.Errorf("unable to exchange code: %w", err)
 	}
@@ -657,12 +686,10 @@ func (a *Authenticator) registerNewUser(
 		Department: userInfo.Department,
 		Authentications: []domain.UserAuthentication{
 			{
-				BaseModel: domain.BaseModel{
-					CreatedBy: ctxUserInfo.UserId(),
-					UpdatedBy: ctxUserInfo.UserId(),
-					CreatedAt: now,
-					UpdatedAt: now,
-				},
+				CreatedBy:      ctxUserInfo.UserId(),
+				UpdatedBy:      ctxUserInfo.UserId(),
+				CreatedAt:      now,
+				UpdatedAt:      now,
 				UserIdentifier: userInfo.Identifier,
 				Source:         source,
 				ProviderName:   provider,
@@ -726,12 +753,10 @@ func (a *Authenticator) updateExternalUser(
 		ctxUserInfo := domain.GetUserInfo(ctx)
 		now := time.Now()
 		existingUser.Authentications = append(existingUser.Authentications, domain.UserAuthentication{
-			BaseModel: domain.BaseModel{
-				CreatedBy: ctxUserInfo.UserId(),
-				UpdatedBy: ctxUserInfo.UserId(),
-				CreatedAt: now,
-				UpdatedAt: now,
-			},
+			CreatedBy:      ctxUserInfo.UserId(),
+			UpdatedBy:      ctxUserInfo.UserId(),
+			CreatedAt:      now,
+			UpdatedAt:      now,
 			UserIdentifier: existingUser.Identifier,
 			Source:         source,
 			ProviderName:   provider,

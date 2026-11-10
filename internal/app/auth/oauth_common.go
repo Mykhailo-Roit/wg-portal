@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/h44z/wg-portal/internal"
@@ -13,6 +14,8 @@ func parseOauthUserInfo(
 	mapping config.OauthFields,
 	adminMapping *config.OauthAdminMapping,
 	raw map[string]any,
+	providerType string,
+	providerName string,
 ) (*domain.AuthenticatorUserInfo, error) {
 	var isAdmin bool
 	var adminInfoAvailable bool
@@ -24,18 +27,6 @@ func parseOauthUserInfo(
 		re := adminMapping.GetAdminValueRegex()
 		if re.MatchString(strings.TrimSpace(internal.MapDefaultString(raw, mapping.IsAdmin, ""))) {
 			isAdmin = true
-		}
-	}
-
-	// next try to parse the user's groups
-	if !isAdmin && mapping.UserGroups != "" && adminMapping.AdminGroupRegex != "" {
-		adminInfoAvailable = true
-		re := adminMapping.GetAdminGroupRegex()
-		for _, group := range userGroups {
-			if re.MatchString(strings.TrimSpace(group)) {
-				isAdmin = true
-				break
-			}
 		}
 	}
 
@@ -51,22 +42,35 @@ func parseOauthUserInfo(
 		AdminInfoAvailable: adminInfoAvailable,
 	}
 
+	if err := userInfo.Sanitize(providerType, providerName); err != nil {
+		return nil, err
+	}
+
+	// check admin group match after sanitization
+	if !isAdmin && mapping.UserGroups != "" && adminMapping.AdminGroupRegex != "" {
+		adminInfoAvailable = true
+		re := adminMapping.GetAdminGroupRegex()
+		if slices.ContainsFunc(userInfo.UserGroups, re.MatchString) {
+			isAdmin = true
+		}
+		userInfo.IsAdmin = isAdmin
+		userInfo.AdminInfoAvailable = adminInfoAvailable
+	}
+
 	return userInfo, nil
 }
 
 // getOauthFieldMapping returns the default field mapping for the oauth provider
 func getOauthFieldMapping(f config.OauthFields) config.OauthFields {
 	defaultMap := config.OauthFields{
-		BaseFields: config.BaseFields{
-			UserIdentifier: "sub",
-			Email:          "email",
-			Firstname:      "given_name",
-			Lastname:       "family_name",
-			Phone:          "phone",
-			Department:     "department",
-		},
-		IsAdmin:    "admin_flag",
-		UserGroups: "", // by default, do not use user groups
+		UserIdentifier: "sub",
+		Email:          "email",
+		Firstname:      "given_name",
+		Lastname:       "family_name",
+		Phone:          "phone",
+		Department:     "department",
+		IsAdmin:        "admin_flag",
+		UserGroups:     "", // by default, do not use user groups
 	}
 	if f.UserIdentifier != "" {
 		defaultMap.UserIdentifier = f.UserIdentifier
